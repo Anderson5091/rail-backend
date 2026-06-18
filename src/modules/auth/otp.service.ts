@@ -1,7 +1,7 @@
 import { prisma } from "../../config/database";
 import { ENV } from "../../config/env";
 import { logger } from "../../utils/logger";
-import * as Brevo from "@getbrevo/brevo";
+import { BrevoClient } from "@getbrevo/brevo";
 
 function generateOtpCode(): string {
   return Math.floor(100000 + Math.random() * 900000).toString();
@@ -14,10 +14,9 @@ async function sendSms(phone: string, code: string): Promise<boolean> {
   }
 
   try {
-    const apiInstance = new Brevo.TransactionalSMSApi();
-    apiInstance.setApiKey(Brevo.TransactionalSMSApiApiKeys.apiKey, ENV.BREVO_API_KEY);
+    const apiInstance = new BrevoClient({ apiKey: ENV.BREVO_API_KEY });
 
-    await apiInstance.sendTransacSms({
+    await apiInstance.transactionalSms.sendTransacSms({
       sender: ENV.BREVO_SMS_SENDER,
       recipient: phone,
       content: `Your Quick Send verification code is ${code}. It expires in 5 minutes.`,
@@ -27,7 +26,7 @@ async function sendSms(phone: string, code: string): Promise<boolean> {
     logger.info(`[OTP] SMS sent to ${phone}`);
     return true;
   } catch (error: any) {
-    logger.error(`[OTP] SMS failed for ${phone}: ${error.response?.body || error.message}`);
+    logger.error(`[OTP] SMS failed for ${phone}: ${error.message}`);
     return false;
   }
 }
@@ -40,10 +39,9 @@ async function sendEmail(email: string, code: string): Promise<void> {
   }
 
   try {
-    const apiInstance = new Brevo.TransactionalEmailsApi();
-    apiInstance.setApiKey(Brevo.TransactionalEmailsApiApiKeys.apiKey, emailKey);
+    const apiInstance = new BrevoClient({ apiKey: emailKey });
 
-    await apiInstance.sendTransacEmail({
+    await apiInstance.transactionalEmails.sendTransacEmail({
       subject: "Your Quick Send Verification Code",
       sender: { email: ENV.BREVO_EMAIL_FROM, name: ENV.BREVO_EMAIL_NAME },
       to: [{ email }],
@@ -52,7 +50,7 @@ async function sendEmail(email: string, code: string): Promise<void> {
 
     logger.info(`[OTP] Email sent to ${email}`);
   } catch (error: any) {
-    logger.error(`[OTP] Email failed for ${email}: ${error.response?.body || error.message}`);
+    logger.error(`[OTP] Email failed for ${email}: ${error.message}`);
     logger.info(`[OTP] Fallback - code for ${email}: ${code}`);
   }
 }

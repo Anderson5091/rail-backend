@@ -29,13 +29,7 @@ const httpServer = createServer(app);
 
 app.use(helmet());
 app.use(cors({
-  origin: (origin, callback) => {
-    if (!origin || ENV.CORS_ORIGINS.some((o) => origin.startsWith(o))) {
-      callback(null, true);
-    } else {
-      callback(null, false);
-    }
-  },
+  origin: ENV.CORS_ORIGINS,
   credentials: true,
 }));
 app.use(express.json({ limit: "1mb" }));
