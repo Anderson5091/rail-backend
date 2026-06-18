@@ -10,8 +10,6 @@ interface TreasuryWalletConfig {
   thresholdMin?: number;
 }
 
-const REVENUE_CHAIN: ChainType = "base";
-
 export class TreasuryBootstrapService {
   async bootstrapTreasuryWallets() {
     logger.info("[TreasuryBootstrap] Starting treasury wallet bootstrap...");
@@ -62,40 +60,7 @@ export class TreasuryBootstrapService {
       }
     }
 
-    await this.bootstrapRevenueWallet();
-
     logger.info("[TreasuryBootstrap] Treasury wallet bootstrap complete");
-  }
-
-  private async bootstrapRevenueWallet() {
-    const existing = await prisma.treasuryWallet.findFirst({
-      where: { walletType: "REVENUE" },
-    });
-
-    if (existing) {
-      logger.info(`[TreasuryBootstrap] REVENUE wallet exists: ${existing.address}`);
-      return;
-    }
-
-    try {
-      const created = await crossmintService.createWallet(REVENUE_CHAIN, "COLLECTION");
-
-      await prisma.treasuryWallet.create({
-        data: {
-          walletType: "REVENUE",
-          chain: REVENUE_CHAIN,
-          network: REVENUE_CHAIN.toUpperCase(),
-          address: created.address,
-          crossmintWalletId: created.crossmintWalletId,
-          walletLocator: created.walletLocator,
-          status: "ACTIVE",
-        },
-      });
-
-      logger.info(`[TreasuryBootstrap] Created REVENUE wallet: ${created.address}`);
-    } catch (error) {
-      logger.error("[TreasuryBootstrap] Failed to create REVENUE wallet:", error);
-    }
   }
 }
 

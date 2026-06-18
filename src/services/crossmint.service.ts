@@ -4,7 +4,7 @@ import { ENV } from "../config/env";
 import { logger } from "../utils/logger";
 
 export type ChainType = Chain;
-export type WalletType = "COLLECTION" | "HOT" | "WARM" | "COLD" | "DEPOSIT";
+export type WalletType = "HOT" | "WARM" | "COLD" | "DEPOSIT";
 
 export interface CrossmintWalletResult {
   crossmintWalletId: string;
