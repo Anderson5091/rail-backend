@@ -32,14 +32,17 @@ model User {
 
 model OtpCode {
   id        String   @id @default(cuid())
-  userId    String
+  userId    String?
+  email     String?
+  token     String?
   code      String
   type      String   @default("PHONE_VERIFICATION")
   expiresAt DateTime
   verified  Boolean  @default(false)
+  data      Json?
   createdAt DateTime @default(now())
 
-  user User @relation(fields: [userId], references: [id])
+  user User? @relation(fields: [userId], references: [id])
 }
 
 model UserCryptoWallet {

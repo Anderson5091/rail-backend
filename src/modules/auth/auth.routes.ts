@@ -1,3 +1,4 @@
+import crypto from "crypto";
 import { z } from "zod";
 import { Router, Request, Response } from "express";
 import bcrypt from "bcryptjs";
@@ -16,8 +17,8 @@ const router = Router();
 
 const registerSchema = z.object({
   email: z.string().email(),
-  phone: z.string().optional(),
-  fullName: z.string().optional(),
+  phone: z.string(),
+  fullName: z.string(),
   password: z.string().min(8),
 });
 
@@ -61,8 +62,79 @@ router.post("/register", authLimiter, async (req: Request, res: Response) => {
 
   const password = await bcrypt.hash(data.password, 12);
 
+  const { token, code } = await otpService.storeRegistration({
+    email: data.email,
+    phone: data.phone,
+    fullName: data.fullName,
+    password,
+  });
+
+  await otpService.sendOtp(data.phone, data.email);
+
+  const maskPhone = (p: string) => p.length > 4 ? p.slice(0, 3) + "****" + p.slice(-2) : p;
+
+  res.status(201).json({
+    token,
+    phone: maskPhone(data.phone),
+    message: "Verification code sent. Please verify to complete registration.",
+  });
+});
+
+router.post("/send-otp", authLimiter, async (req: Request, res: Response) => {
+  const { token } = req.body;
+  if (!token) throw new AppError(400, "token required");
+
+  const pending = await prisma.otpCode.findFirst({
+    where: { token, type: "PHONE_VERIFICATION", verified: false, expiresAt: { gte: new Date() } },
+    orderBy: { createdAt: "desc" },
+  });
+
+  if (!pending?.data || typeof pending.data !== "object" || !("phone" in pending.data) || !("email" in pending.data)) {
+    throw new AppError(400, "No pending registration found for this token");
+  }
+
+  const { phone, email } = pending.data as any;
+  const smsCode = await otpService.sendOtp(phone, email);
+  await otpService.storeOtpCode(token, smsCode);
+
+  res.json({ message: "OTP sent via SMS" });
+});
+
+router.post("/send-otp-email", authLimiter, async (req: Request, res: Response) => {
+  const { token } = req.body;
+  if (!token) throw new AppError(400, "token required");
+
+  const pending = await prisma.otpCode.findFirst({
+    where: { token, type: "PHONE_VERIFICATION", verified: false, expiresAt: { gte: new Date() } },
+    orderBy: { createdAt: "desc" },
+  });
+
+  if (!pending?.data || typeof pending.data !== "object" || !("email" in pending.data)) {
+    throw new AppError(400, "No pending registration found for this token");
+  }
+
+  const { email } = pending.data as any;
+  const emailCode = await otpService.sendOtpEmailOnly(email);
+  await otpService.storeOtpCode(token, emailCode);
+
+  res.json({ message: "OTP sent via email" });
+});
+
+router.post("/verify-otp", authLimiter, async (req: Request, res: Response) => {
+  const { token, code } = req.body;
+  if (!token || !code) throw new AppError(400, "token and code required");
+
+  const pendingData = await otpService.verifyOtp(token, code);
+  if (!pendingData) throw new AppError(400, "Invalid or expired OTP");
+
   const user = await prisma.user.create({
-    data: { email: data.email, phone: data.phone, fullName: data.fullName, password },
+    data: {
+      email: pendingData.email,
+      phone: pendingData.phone,
+      fullName: pendingData.fullName,
+      password: pendingData.password,
+      phoneVerified: true,
+    },
   });
 
   const wallet = await prisma.wallet.create({
@@ -82,62 +154,12 @@ router.post("/register", authLimiter, async (req: Request, res: Response) => {
 
   await createUserCryptoWallets(user.id);
 
-  if (user.phone) {
-    await otpService.sendOtp(user.id, user.phone, user.email ?? undefined);
-  }
-
-  const maskPhone = (p: string) => p.length > 4 ? p.slice(0, 3) + "****" + p.slice(-2) : p;
-
-  res.status(201).json({
-    userId: user.id,
-    email: user.email,
-    phone: user.phone ? maskPhone(user.phone) : null,
-    message: "Account created. Please verify your phone number.",
-  });
-});
-
-router.post("/send-otp", authLimiter, async (req: Request, res: Response) => {
-  const { userId } = req.body;
-  if (!userId) throw new AppError(400, "userId required");
-
-  const user = await prisma.user.findUnique({ where: { id: userId } });
-  if (!user) throw new AppError(404, "User not found");
-  if (!user.phone) throw new AppError(400, "No phone number on file");
-
-  await otpService.sendOtp(user.id, user.phone, user.email ?? undefined);
-
-  res.json({ message: "OTP sent via SMS" });
-});
-
-router.post("/send-otp-email", authLimiter, async (req: Request, res: Response) => {
-  const { userId } = req.body;
-  if (!userId) throw new AppError(400, "userId required");
-
-  const user = await prisma.user.findUnique({ where: { id: userId } });
-  if (!user) throw new AppError(404, "User not found");
-  if (!user.email) throw new AppError(400, "No email on file");
-
-  await otpService.sendOtpEmailOnly(user.id, user.email);
-
-  res.json({ message: "OTP sent via email" });
-});
-
-router.post("/verify-otp", authLimiter, async (req: Request, res: Response) => {
-  const { userId, code } = req.body;
-  if (!userId || !code) throw new AppError(400, "userId and code required");
-
-  const valid = await otpService.verifyOtp(userId, code);
-  if (!valid) throw new AppError(400, "Invalid or expired OTP");
-
-  const user = await prisma.user.findUnique({ where: { id: userId } });
-  if (!user) throw new AppError(404, "User not found");
-
-  const token = generateToken(user.id);
+  const jwt = generateToken(user.id);
   const refreshToken = generateRefreshToken(user.id);
 
   res.json({
-    user: { id: user.id, email: user.email, fullName: user.fullName, phoneVerified: user.phoneVerified },
-    token,
+    user: { id: user.id, email: user.email, fullName: user.fullName, phoneVerified: true },
+    token: jwt,
     refreshToken,
   });
 });
@@ -151,16 +173,12 @@ router.post("/login", authLimiter, async (req: Request, res: Response) => {
   const valid = await bcrypt.compare(data.password, user.password);
   if (!valid) throw new AppError(401, "Invalid credentials");
 
-  if (!user.phoneVerified) {
-    throw new AppError(403, "Phone number not verified. Please verify your phone first.");
-  }
-
-  const token = generateToken(user.id);
+  const jwt = generateToken(user.id);
   const refreshToken = generateRefreshToken(user.id);
 
   res.json({
     user: { id: user.id, email: user.email, fullName: user.fullName, phoneVerified: user.phoneVerified },
-    token,
+    token: jwt,
     refreshToken,
   });
 });

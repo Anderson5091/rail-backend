@@ -1,3 +1,4 @@
+import crypto from "crypto";
 import { prisma } from "../../config/database";
 import { ENV } from "../../config/env";
 import { logger } from "../../utils/logger";
@@ -5,6 +6,10 @@ import { BrevoClient } from "@getbrevo/brevo";
 
 function generateOtpCode(): string {
   return Math.floor(100000 + Math.random() * 900000).toString();
+}
+
+function generateToken(): string {
+  return crypto.randomUUID();
 }
 
 async function sendSms(phone: string, code: string): Promise<boolean> {
@@ -31,70 +36,64 @@ async function sendSms(phone: string, code: string): Promise<boolean> {
   }
 }
 
-async function sendEmail(email: string, code: string): Promise<void> {
-  const emailKey = ENV.BREVO_EMAIL_API_KEY || ENV.BREVO_API_KEY;
-  if (!emailKey) {
-    logger.info(`[OTP] Email fallback to ${email}: code ${code}`);
-    return;
-  }
-
-  try {
-    const apiInstance = new BrevoClient({ apiKey: emailKey });
-
-    await apiInstance.transactionalEmails.sendTransacEmail({
-      subject: "Your Quick Send Verification Code",
-      sender: { email: ENV.BREVO_EMAIL_FROM, name: ENV.BREVO_EMAIL_NAME },
-      to: [{ email }],
-      htmlContent: `<h2>Phone Verification</h2><p>Your verification code is: <strong>${code}</strong></p><p>This code expires in 5 minutes.</p>`,
-    });
-
-    logger.info(`[OTP] Email sent to ${email}`);
-  } catch (error: any) {
-    logger.error(`[OTP] Email failed for ${email}: ${error.message}`);
-    logger.info(`[OTP] Fallback - code for ${email}: ${code}`);
-  }
+async function sendEmailNative(email: string, code: string): Promise<void> {
+  logger.info(`[OTP] Email verification code for ${email}: ${code}`);
 }
 
 export const otpService = {
-  async sendOtp(userId: string, phone: string, email?: string): Promise<string> {
+  generateToken,
+
+  async sendOtp(phone: string, email: string): Promise<string> {
     const code = generateOtpCode();
-    const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
-
-    await prisma.otpCode.create({
-      data: { userId, code, type: "PHONE_VERIFICATION", expiresAt },
-    });
-
     const smsSent = await sendSms(phone, code);
 
-    if (!smsSent && email) {
+    if (!smsSent) {
       logger.info(`[OTP] SMS failed, sending code via email to ${email}`);
-      await sendEmail(email, code);
+      await sendEmailNative(email, code);
     }
 
-    if (!smsSent && !email) {
-      logger.info(`[OTP] No delivery channel available - code for ${phone} (user ${userId}): ${code}`);
+    if (!smsSent) {
+      logger.info(`[OTP] No delivery channel available - code for ${email}: ${code}`);
     }
 
     return code;
   },
 
-  async sendOtpEmailOnly(userId: string, email: string): Promise<string> {
+  async sendOtpEmailOnly(email: string): Promise<string> {
+    const code = generateOtpCode();
+    await sendEmailNative(email, code);
+    return code;
+  },
+
+  async storeRegistration(data: {
+    email: string;
+    phone: string;
+    fullName: string;
+    password: string;
+  }): Promise<{ token: string; code: string }> {
+    const token = generateToken();
     const code = generateOtpCode();
     const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
 
     await prisma.otpCode.create({
-      data: { userId, code, type: "PHONE_VERIFICATION", expiresAt },
+      data: { token, code, type: "PHONE_VERIFICATION", expiresAt, data },
     });
 
-    await sendEmail(email, code);
-
-    return code;
+    return { token, code };
   },
 
-  async verifyOtp(userId: string, code: string): Promise<boolean> {
+  async storeOtpCode(token: string, code: string): Promise<void> {
+    const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
+
+    await prisma.otpCode.create({
+      data: { token, code, type: "PHONE_VERIFICATION", expiresAt },
+    });
+  },
+
+  async verifyOtp(token: string, code: string): Promise<any | null> {
     const otp = await prisma.otpCode.findFirst({
       where: {
-        userId,
+        token,
         code,
         type: "PHONE_VERIFICATION",
         verified: false,
@@ -103,18 +102,13 @@ export const otpService = {
       orderBy: { createdAt: "desc" },
     });
 
-    if (!otp) return false;
+    if (!otp) return null;
 
     await prisma.otpCode.update({
       where: { id: otp.id },
       data: { verified: true },
     });
 
-    await prisma.user.update({
-      where: { id: userId },
-      data: { phoneVerified: true },
-    });
-
-    return true;
+    return otp.data;
   },
 };
