@@ -43,12 +43,12 @@ class CrossmintService {
 
     const recoverySecret =
       type === "DEPOSIT"
-        ? ENV.WALLET_RECOVERY_SECRET || ENV.DEPOSIT_SIGNER_SECRET
+        ? ENV.WALLET_RECOVERY_SECRET
         : ENV.TREASURY_RECOVERY_SECRET;
 
     const signerSecret =
       type === "DEPOSIT"
-        ? ENV.WALLET_SIGNER_SECRET || ENV.DEPOSIT_SIGNER_SECRET
+        ? ENV.WALLET_SIGNER_SECRET
         : ENV.TREASURY_SIGNER_SECRET;
 
     try {
