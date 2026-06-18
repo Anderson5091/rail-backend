@@ -1,0 +1,263 @@
+import { Router, Response } from "express";
+import { prisma } from "../../config/database";
+import { authenticate, AuthRequest, requireRole } from "../../middleware/auth";
+
+const router = Router();
+
+router.get("/dashboard", authenticate, requireRole("SUPER_ADMIN", "COMPLIANCE", "TREASURY", "OPS"), async (_req: AuthRequest, res: Response) => {
+  const [totalUsers, activeUsers, totalTransfers, pendingKyc, totalVolume, failedPayouts, openCases, fraudAlerts, alerts, recentActivity] = await Promise.all([
+    prisma.user.count(),
+    prisma.user.count({ where: { wallets: { some: { status: "ACTIVE" } } } }),
+    prisma.transfer.count({ where: { status: { in: ["PENDING_PAYOUT", "SENT_TO_PARTNER"] } } }),
+    prisma.kycProfile.count({ where: { status: "PENDING" } }),
+    prisma.treasuryWallet.aggregate({ _sum: { balance: true } }),
+    prisma.payoutOrder.count({ where: { status: "FAILED" } }),
+    prisma.complianceCase.count({ where: { status: { in: ["OPEN", "INVESTIGATING"] } } }),
+    prisma.systemAlert.count({ where: { severity: { in: ["CRITICAL", "HIGH"] }, status: "OPEN" } }),
+    prisma.systemAlert.findMany({ where: { status: "OPEN" }, orderBy: { createdAt: "desc" }, take: 10 }),
+    prisma.adminActionLog.findMany({ orderBy: { createdAt: "desc" }, take: 10 }),
+  ]);
+
+  res.json({
+    totalUsers,
+    activeUsers,
+    totalTransfers,
+    totalVolume: Number(totalVolume._sum.balance) || 0,
+    pendingKyc,
+    failedPayouts,
+    openCases,
+    fraudAlerts,
+    alerts: alerts.map((a: { id: string; severity: string; message: string | null; createdAt: Date }) => ({
+      id: a.id,
+      severity: a.severity as "CRITICAL" | "HIGH" | "MEDIUM" | "LOW",
+      message: a.message || "",
+      timestamp: a.createdAt,
+    })),
+    recentActivity: recentActivity.map((r: { id: string; action: string; entity: string | null; adminId: string; createdAt: Date }) => ({
+      id: r.id,
+      action: r.action,
+      user: r.entity || r.adminId || "System",
+      timestamp: r.createdAt,
+    })),
+  });
+});
+
+router.get("/users", authenticate, requireRole("SUPER_ADMIN", "OPS"), async (_req: AuthRequest, res: Response) => {
+  const users = await prisma.user.findMany({
+    select: {
+      id: true, email: true, fullName: true, status: true, createdAt: true,
+      kycProfile: { select: { tier: true, status: true } },
+      _count: { select: { transfers: true } },
+    },
+    orderBy: { createdAt: "desc" },
+    take: 100,
+  });
+  res.json(users.map((u: { id: string; email: string; fullName: string | null; status: string | null; createdAt: Date; kycProfile: { tier: number | null; status: string | null } | null; _count: { transfers: number } }) => ({
+    id: u.id,
+    email: u.email,
+    name: u.fullName || u.email,
+    status: u.status || "ACTIVE",
+    kycTier: u.kycProfile?.tier ?? 0,
+    totalTransfers: u._count.transfers,
+    totalVolume: 0,
+    createdAt: u.createdAt,
+  })));
+});
+
+router.post("/users/:id/toggle-status", authenticate, requireRole("SUPER_ADMIN"), async (req: AuthRequest, res: Response) => {
+  const user = await prisma.user.findUnique({ where: { id: req.params.id } });
+  if (!user) return res.status(404).json({ error: "User not found" });
+
+  const wallet = await prisma.wallet.findFirst({ where: { userId: user.id } });
+  const newStatus = wallet?.status === "FROZEN" ? "ACTIVE" : "FROZEN";
+
+  if (wallet) {
+    await prisma.wallet.update({ where: { id: wallet.id }, data: { status: newStatus } });
+  }
+
+  await prisma.adminActionLog.create({
+    data: {
+      adminId: req.userId,
+      action: newStatus === "FROZEN" ? "FREEZE_USER" : "ACTIVATE_USER",
+      entity: "User",
+      entityId: user.id,
+    },
+  });
+
+  res.json({ status: newStatus });
+});
+
+router.get("/kyc/pending", authenticate, requireRole("SUPER_ADMIN", "COMPLIANCE"), async (_req: AuthRequest, res: Response) => {
+  const pending = await prisma.kycProfile.findMany({
+    where: { status: "PENDING" },
+    include: { user: { select: { email: true, fullName: true } } },
+    orderBy: { createdAt: "desc" },
+  });
+  res.json(pending);
+});
+
+router.post("/kyc/:id/approve", authenticate, requireRole("SUPER_ADMIN", "COMPLIANCE"), async (req: AuthRequest, res: Response) => {
+  const profile = await prisma.kycProfile.update({
+    where: { id: req.params.id },
+    data: { status: "APPROVED" },
+  });
+
+  await prisma.adminActionLog.create({
+    data: {
+      adminId: req.userId,
+      action: "APPROVE_KYC",
+      entity: "KYC",
+      entityId: req.params.id,
+    },
+  });
+
+  res.json({ status: "APPROVED" });
+});
+
+router.post("/kyc/:id/reject", authenticate, requireRole("SUPER_ADMIN", "COMPLIANCE"), async (req: AuthRequest, res: Response) => {
+  const profile = await prisma.kycProfile.update({
+    where: { id: req.params.id },
+    data: { status: "REJECTED" },
+  });
+
+  await prisma.adminActionLog.create({
+    data: {
+      adminId: req.userId,
+      action: "REJECT_KYC",
+      entity: "KYC",
+      entityId: req.params.id,
+      metadata: { reason: req.body.reason },
+    },
+  });
+
+  res.json({ status: "REJECTED" });
+});
+
+router.get("/compliance-cases", authenticate, requireRole("SUPER_ADMIN", "COMPLIANCE"), async (_req: AuthRequest, res: Response) => {
+  const cases = await prisma.complianceCase.findMany({
+    include: { user: { select: { email: true, fullName: true } } },
+    orderBy: { createdAt: "desc" },
+    take: 50,
+  });
+  res.json(cases);
+});
+
+router.post("/compliance-cases/:id/escalate", authenticate, requireRole("SUPER_ADMIN", "COMPLIANCE"), async (req: AuthRequest, res: Response) => {
+  await prisma.complianceCase.update({
+    where: { id: req.params.id },
+    data: { status: "ESCALATED" },
+  });
+  res.json({ status: "ESCALATED" });
+});
+
+router.get("/payouts/failed", authenticate, requireRole("SUPER_ADMIN", "OPS"), async (_req: AuthRequest, res: Response) => {
+  const payouts = await prisma.payoutOrder.findMany({
+    where: { status: "FAILED" },
+    orderBy: { createdAt: "desc" },
+    take: 50,
+  });
+  res.json(payouts);
+});
+
+router.post("/payouts/:id/retry", authenticate, requireRole("SUPER_ADMIN", "OPS"), async (req: AuthRequest, res: Response) => {
+  const payout = await prisma.payoutOrder.findUnique({ where: { id: req.params.id } });
+  if (!payout) return res.status(404).json({ error: "Payout not found" });
+  if (payout.attemptCount >= 3) return res.status(400).json({ error: "Max retries reached" });
+
+  await prisma.payoutOrder.update({
+    where: { id: req.params.id },
+    data: { status: "QUEUED", attemptCount: { increment: 1 } },
+  });
+
+  await prisma.adminActionLog.create({
+    data: {
+      adminId: req.userId,
+      action: "RETRY_PAYOUT",
+      entity: "Payout",
+      entityId: req.params.id,
+    },
+  });
+
+  res.json({ status: "RETRY_QUEUED" });
+});
+
+router.get("/notifications", authenticate, requireRole("SUPER_ADMIN", "COMPLIANCE", "TREASURY", "OPS"), async (_req: AuthRequest, res: Response) => {
+  const systemAlerts = await prisma.systemAlert.findMany({
+    where: { status: { not: "CLOSED" } },
+    orderBy: { createdAt: "desc" },
+    take: 50,
+  });
+
+  const notifications = systemAlerts.map((alert: { id: string; type: string | null; message: string | null; severity: string; createdAt: Date }) => ({
+    id: alert.id,
+    type: alert.type || "SYSTEM_INFO",
+    title: (alert.type || "System Alert").replace(/_/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase()),
+    message: alert.message,
+    severity: alert.severity,
+    status: "UNREAD" as const,
+    createdAt: alert.createdAt,
+  }));
+
+  res.json(notifications);
+});
+
+router.post("/notifications/:id/read", authenticate, requireRole("SUPER_ADMIN", "COMPLIANCE", "TREASURY", "OPS"), async (req: AuthRequest, res: Response) => {
+  await prisma.systemAlert.update({
+    where: { id: req.params.id },
+    data: { status: "CLOSED" },
+  });
+  res.json({ success: true });
+});
+
+router.post("/notifications/mark-all-read", authenticate, requireRole("SUPER_ADMIN", "COMPLIANCE", "TREASURY", "OPS"), async (_req: AuthRequest, res: Response) => {
+  await prisma.systemAlert.updateMany({
+    where: { status: "OPEN" },
+    data: { status: "CLOSED" },
+  });
+  res.json({ success: true });
+});
+
+router.get("/fraud/analyze/:userId", authenticate, requireRole("SUPER_ADMIN", "COMPLIANCE"), async (req: AuthRequest, res: Response) => {
+  const user = await prisma.user.findUnique({
+    where: { id: req.params.userId },
+    include: {
+      transfers: { orderBy: { createdAt: "desc" }, take: 5 },
+      amlChecks: { orderBy: { createdAt: "desc" }, take: 5 },
+      kycProfile: true,
+    },
+  });
+
+  if (!user) return res.status(404).json({ error: "User not found" });
+
+  const flags: string[] = [];
+  let riskScore = 0;
+
+  const recentTransfers = await prisma.transfer.count({
+    where: { userId: user.id, createdAt: { gte: new Date(Date.now() - 86400000) } },
+  });
+  if (recentTransfers > 5) {
+    flags.push("HIGH_VELOCITY");
+    riskScore += 30;
+  }
+
+  if (user.transfers.some((t: { amount: { toString: () => string } }) => Number(t.amount) > 2000)) {
+    flags.push("HIGH_VALUE_TRANSFER");
+    riskScore += 25;
+  }
+
+  if (user.kycProfile?.tier === 1) {
+    riskScore += 15;
+  }
+
+  res.json({
+    userId: user.id,
+    riskScore,
+    flags,
+    recentActivity: user.transfers.map((t: { amount: { toString: () => string }; createdAt: any }) => ({
+      action: `Transfer $${Number(t.amount)}`,
+      timestamp: t.createdAt,
+    })),
+  });
+});
+
+export { router as adminRoutes };

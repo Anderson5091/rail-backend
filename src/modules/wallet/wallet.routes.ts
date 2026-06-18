@@ -1,0 +1,139 @@
+import { z } from "zod";
+import { Router, Response } from "express";
+import { prisma } from "../../config/database";
+import { ENV } from "../../config/env";
+import { authenticate, AuthRequest } from "../../middleware/auth";
+import { crossmintService, type ChainType } from "../../services/crossmint.service";
+import { depositService } from "../deposit/deposit.service";
+import { logger } from "../../utils/logger";
+
+const router = Router();
+
+async function ensureUserCryptoWallets(userId: string) {
+  const networks = ENV.SUPPORTED_NETWORKS;
+  const chains = ENV.NETWORK_CHAIN;
+
+  for (let i = 0; i < networks.length; i++) {
+    const existing = await prisma.userCryptoWallet.findUnique({
+      where: { userId_chain: { userId, chain: chains[i] } },
+    });
+
+    if (existing) continue;
+
+    try {
+      const chain = chains[i] as ChainType;
+      const wallet = await crossmintService.createWallet(chain, "DEPOSIT");
+
+      await prisma.userCryptoWallet.create({
+        data: {
+          userId,
+          network: networks[i],
+          chain,
+          crossmintWalletId: wallet.crossmintWalletId,
+          walletLocator: wallet.walletLocator,
+          address: wallet.address,
+        },
+      });
+
+      logger.info(`[Wallet] Created missing ${networks[i]} crypto wallet for user ${userId}`);
+    } catch (error) {
+      logger.error(`[Wallet] Failed to create ${networks[i]} crypto wallet for user ${userId}:`, error);
+    }
+  }
+}
+
+router.get("/", authenticate, async (req: AuthRequest, res: Response) => {
+  let wallet = await prisma.wallet.findFirst({
+    where: { userId: req.userId },
+  });
+
+  if (!wallet) {
+    wallet = await prisma.wallet.create({
+      data: { userId: req.userId! },
+    });
+  }
+
+  await ensureUserCryptoWallets(req.userId!);
+
+  const cryptoWallets = await prisma.userCryptoWallet.findMany({
+    where: { userId: req.userId },
+  });
+
+  const balance = await prisma.ledgerEntry.aggregate({
+    where: { walletId: wallet.id },
+    _sum: { amount: true },
+  });
+
+  const credits = await prisma.ledgerEntry.aggregate({
+    where: { walletId: wallet.id, type: "CREDIT" },
+    _sum: { amount: true },
+  });
+
+  const debits = await prisma.ledgerEntry.aggregate({
+    where: { walletId: wallet.id, type: "DEBIT" },
+    _sum: { amount: true },
+  });
+
+  const availableBalance = Number(credits._sum.amount || 0) - Number(debits._sum.amount || 0);
+
+  res.json({
+    id: wallet.id,
+    userId: wallet.userId,
+    currency: wallet.currency,
+    status: wallet.status,
+    availableBalance: availableBalance.toFixed(2),
+    pendingBalance: "0.00",
+    cryptoWallets: cryptoWallets.map((w: { network: string; chain: string; address: string }) => ({
+      network: w.network,
+      chain: w.chain,
+      address: w.address,
+    })),
+  });
+});
+
+router.get("/crypto-wallets", authenticate, async (req: AuthRequest, res: Response) => {
+  await ensureUserCryptoWallets(req.userId!);
+
+  const wallets = await prisma.userCryptoWallet.findMany({
+    where: { userId: req.userId },
+  });
+
+  res.json(wallets);
+});
+
+router.get("/addresses", authenticate, async (req: AuthRequest, res: Response) => {
+  const wallet = await prisma.wallet.findFirst({
+    where: { userId: req.userId },
+    include: { addresses: true },
+  });
+  res.json(wallet?.addresses || []);
+});
+
+router.get("/transactions", authenticate, async (req: AuthRequest, res: Response) => {
+  const wallet = await prisma.wallet.findFirst({
+    where: { userId: req.userId },
+  });
+
+  if (!wallet) return res.json([]);
+
+  const transactions = await prisma.walletTransaction.findMany({
+    where: { walletId: wallet.id },
+    orderBy: { createdAt: "desc" },
+    take: 50,
+  });
+
+  res.json(transactions);
+});
+
+const createDepositSchema = z.object({
+  chain: z.enum(["BASE", "ETHEREUM", "POLYGON", "SOLANA"]),
+  token: z.string().default("USDT"),
+});
+
+router.post("/create-deposit", authenticate, async (req: AuthRequest, res: Response) => {
+  const data = createDepositSchema.parse(req.body);
+  const result = await depositService.createDepositRequest(req.userId!, data.chain, data.token);
+  res.status(201).json(result);
+});
+
+export { router as walletRoutes };

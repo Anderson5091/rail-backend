@@ -1,0 +1,496 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String   @id @default(cuid())
+  email         String   @unique
+  phone         String?
+  phoneVerified Boolean  @default(false)
+  password      String
+  fullName      String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  wallets         Wallet[]
+  transfers       Transfer[]
+  beneficiaries   Beneficiary[]
+  kycProfile      KycProfile?
+  kycDocuments    KycDocument[]
+  amlChecks       AmlCheck[]
+  sanctionsHits   SanctionsHit[]
+  complianceCases ComplianceCase[]
+  riskScore       RiskScore?
+  notifications   Notification[]
+  cryptoWallets   UserCryptoWallet[]
+  otpCodes        OtpCode[]
+}
+
+model OtpCode {
+  id        String   @id @default(cuid())
+  userId    String
+  code      String
+  type      String   @default("PHONE_VERIFICATION")
+  expiresAt DateTime
+  verified  Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+}
+
+model UserCryptoWallet {
+  id                String   @id @default(cuid())
+  userId            String
+  network           String
+  chain             String
+  crossmintWalletId String   @unique
+  walletLocator     String
+  address           String
+  createdAt         DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@unique([userId, chain])
+}
+
+model Wallet {
+  id      String @id @default(cuid())
+  userId  String
+  currency String @default("USDT")
+  status  String @default("ACTIVE")
+
+  crossmintWalletId String? @unique
+  crossmintLocator  String?
+  crossmintAddress  String?
+  crossmintChain    String  @default("base")
+
+  user        User               @relation(fields: [userId], references: [id])
+  addresses   WalletAddress[]
+  transactions WalletTransaction[]
+  ledgerEntries LedgerEntry[]
+}
+
+model WalletAddress {
+  id       String @id @default(cuid())
+  walletId String
+  network  String
+  address  String @unique
+
+  wallet Wallet @relation(fields: [walletId], references: [id])
+}
+
+model WalletTransaction {
+  id       String   @id @default(cuid())
+  walletId String
+  type     String
+  amount   Decimal  @db.Decimal(24, 8)
+  network  String?
+  txHash   String?
+  status   String   @default("PENDING")
+  createdAt DateTime @default(now())
+
+  wallet Wallet @relation(fields: [walletId], references: [id])
+}
+
+model LedgerEntry {
+  id         String   @id @default(cuid())
+  walletId   String
+  type       String
+  amount     Decimal  @db.Decimal(24, 8)
+  reference  String?
+  uniqueKey  String?  @unique
+  createdAt  DateTime @default(now())
+
+  wallet Wallet @relation(fields: [walletId], references: [id])
+}
+
+model Beneficiary {
+  id                String   @id @default(cuid())
+  userId            String
+  fullName          String
+  country           String
+  payoutMethod      String
+  bankName          String?
+  accountNumber     String?
+  mobileWalletNumber String?
+  mobileProvider    String?
+  cashPickupLocation String?
+  createdAt         DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+}
+
+model FxRate {
+  id          String   @id @default(cuid())
+  fromCurrency String
+  toCurrency  String
+  rate        Decimal  @db.Decimal(24, 8)
+  updatedAt   DateTime @updatedAt
+}
+
+model FeeRule {
+  id           String @id @default(cuid())
+  country      String
+  payoutMethod String
+  fixedFee     Decimal @db.Decimal(24, 8)
+  percentFee   Decimal @db.Decimal(5, 2)
+}
+
+model Transfer {
+  id                String   @id @default(cuid())
+  userId            String
+  beneficiaryId     String?
+  amount            Decimal  @db.Decimal(24, 8)
+  payoutMethod      String?
+  status            String   @default("DRAFT")
+  fxRate            Decimal? @db.Decimal(24, 8)
+  fee               Decimal? @db.Decimal(24, 8)
+  destinationAmount Decimal? @db.Decimal(24, 8)
+  referenceId       String?  @unique
+  payoutOrderId     String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  user        User       @relation(fields: [userId], references: [id])
+  payoutOrder PayoutOrder?
+}
+
+model PayoutOrder {
+  id                String   @id @default(cuid())
+  transferId        String   @unique
+  partner           String?
+  payoutMethod      String?
+  status            String   @default("PENDING")
+  externalReference String?
+  attemptCount      Int      @default(0)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  transfer     Transfer      @relation(fields: [transferId], references: [id])
+  payoutEvents PayoutEvent[]
+  partnerLogs  PartnerLog[]
+}
+
+model PayoutEvent {
+  id            String   @id @default(cuid())
+  payoutOrderId String
+  eventType     String
+  payload       Json?
+  createdAt     DateTime @default(now())
+
+  payoutOrder PayoutOrder @relation(fields: [payoutOrderId], references: [id])
+}
+
+model PartnerLog {
+  id         String   @id @default(cuid())
+  payoutOrderId String
+  partner    String
+  request    Json?
+  response   Json?
+  statusCode Int?
+  createdAt  DateTime @default(now())
+
+  payoutOrder PayoutOrder @relation(fields: [payoutOrderId], references: [id])
+}
+
+model TreasuryWallet {
+  id              String   @id @default(cuid())
+  walletType      String
+  network         String
+  chain           String
+  address         String   @unique
+  crossmintWalletId String?
+  walletLocator   String?
+  balance         Decimal  @default(0) @db.Decimal(24, 8)
+  thresholdMin    Decimal? @db.Decimal(24, 8)
+  thresholdMax    Decimal? @db.Decimal(24, 8)
+  status          String   @default("ACTIVE")
+  lastSync        DateTime @default(now())
+  createdAt       DateTime @default(now())
+
+  movementsFrom TreasuryMovement[] @relation("FromWallet")
+  movementsTo   TreasuryMovement[] @relation("ToWallet")
+}
+
+model TreasuryMovement {
+  id         String   @id @default(cuid())
+  fromWalletId String?
+  toWalletId   String?
+  fromWallet String
+  toWallet   String
+  amount     Decimal  @db.Decimal(24, 8)
+  network    String
+  reason     String?
+  status     String   @default("PENDING")
+  txHash     String?
+  createdAt  DateTime @default(now())
+
+  from TreasuryWallet? @relation("FromWallet", fields: [fromWalletId], references: [id])
+  to   TreasuryWallet? @relation("ToWallet", fields: [toWalletId], references: [id])
+}
+
+model LiquiditySnapshot {
+  id          String   @id @default(cuid())
+  network     String
+  chain       String
+  hotBalance  Decimal  @db.Decimal(24, 8)
+  warmBalance Decimal  @db.Decimal(24, 8)
+  coldBalance Decimal  @db.Decimal(24, 8)
+  totalBalance Decimal @db.Decimal(24, 8)
+  createdAt   DateTime @default(now())
+}
+
+model DepositRequest {
+  id        String   @id @default(cuid())
+  userId    String
+  chain     String
+  token     String   @default("USDT")
+  amount    Decimal? @db.Decimal(24, 8)
+  fee       Decimal? @db.Decimal(24, 8)
+  netAmount Decimal? @db.Decimal(24, 8)
+  status    String   @default("PENDING")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  depositWallet DepositWallet?
+}
+
+model DepositWallet {
+  id               String   @id @default(cuid())
+  depositRequestId String   @unique
+  crossmintWalletId String
+  walletLocator    String
+  address          String
+  chain            String
+  status           String   @default("CREATED")
+  expiresAt        DateTime?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  depositRequest DepositRequest @relation(fields: [depositRequestId], references: [id])
+}
+
+model Withdrawal {
+  id            String   @id @default(cuid())
+  userId        String
+  walletId      String?
+  amount        Decimal  @db.Decimal(24, 8)
+  fee           Decimal  @default(0) @db.Decimal(24, 8)
+  netAmount     Decimal  @db.Decimal(24, 8)
+  chain         String
+  destinationAddress String
+  txHash        String?
+  explorerLink  String?
+  status        String   @default("PENDING")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model KycProfile {
+  id          String   @id @default(cuid())
+  userId      String   @unique
+  tier        Int      @default(1)
+  status      String   @default("PENDING")
+  fullName    String?
+  country     String?
+  dateOfBirth String?
+  address     String?
+  createdAt   DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+}
+
+model KycDocument {
+  id           String   @id @default(cuid())
+  userId       String
+  documentType String
+  fileUrl      String?
+  status       String   @default("PENDING")
+  createdAt    DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+}
+
+model AmlCheck {
+  id            String   @id @default(cuid())
+  userId        String?
+  transactionId String?
+  riskLevel     String?
+  flags         Json?
+  createdAt     DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id])
+}
+
+model SanctionsHit {
+  id         String   @id @default(cuid())
+  userId     String?
+  matchName  String?
+  listSource String?
+  status     String?
+  createdAt  DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id])
+}
+
+model ComplianceCase {
+  id           String   @id @default(cuid())
+  userId       String?
+  transactionId String?
+  status       String?
+  reason       String?
+  assignedTo   String?
+  createdAt    DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id])
+}
+
+model RiskScore {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  score     Int?
+  level     String?
+  factors   Json?
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id])
+}
+
+model IdempotencyKey {
+  key         String   @id
+  userId      String?
+  status      String?
+  response    Json?
+  requestHash String?
+  createdAt   DateTime @default(now())
+}
+
+model Event {
+  id          String   @id @default(cuid())
+  aggregateId String
+  type        String
+  payload     Json?
+  version     Int      @default(1)
+  createdAt   DateTime @default(now())
+
+  @@unique([aggregateId, version])
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String?
+  type      String?
+  channel   String?
+  title     String?
+  message   String?
+  status    String   @default("PENDING")
+  createdAt DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id])
+  deliveries NotificationDelivery[]
+}
+
+model NotificationDelivery {
+  id             String   @id @default(cuid())
+  notificationId String?
+  provider       String?
+  status         String?
+  response       Json?
+  attemptCount   Int      @default(0)
+  createdAt      DateTime @default(now())
+
+  notification Notification? @relation(fields: [notificationId], references: [id])
+}
+
+model EventLog {
+  id        String   @id @default(cuid())
+  eventType String
+  entity    String?
+  entityId  String?
+  payload   Json?
+  createdAt DateTime @default(now())
+}
+
+model Partner {
+  id        String   @id @default(cuid())
+  name      String
+  type      String
+  country   String?
+  status    String   @default("ACTIVE")
+  baseUrl   String?
+  apiKey    String?
+  priority  Int      @default(1)
+  createdAt DateTime @default(now())
+
+  transactions PartnerTransaction[]
+  webhooks     PartnerWebhook[]
+  slaMetrics   PartnerSlaMetric?
+}
+
+model PartnerTransaction {
+  id                String   @id @default(cuid())
+  transferId        String?
+  partnerId         String?
+  externalReference String?
+  status            String?
+  requestPayload    Json?
+  responsePayload   Json?
+  createdAt         DateTime @default(now())
+
+  partner Partner? @relation(fields: [partnerId], references: [id])
+}
+
+model PartnerWebhook {
+  id        String   @id @default(cuid())
+  partnerId String?
+  eventType String?
+  payload   Json?
+  processed Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  partner Partner? @relation(fields: [partnerId], references: [id])
+}
+
+model PartnerSlaMetric {
+  id                String   @id @default(cuid())
+  partnerId         String   @unique
+  successRate       Float?
+  avgResponseTimeMs Int?
+  failureCount      Int      @default(0)
+  updatedAt         DateTime @updatedAt
+
+  partner Partner @relation(fields: [partnerId], references: [id])
+}
+
+model AdminUser {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  role         String   @default("OPS")
+  status       String   @default("ACTIVE")
+  createdAt    DateTime @default(now())
+}
+
+model AdminActionLog {
+  id        String   @id @default(cuid())
+  adminId   String?
+  action    String
+  entity    String?
+  entityId  String?
+  metadata  Json?
+  createdAt DateTime @default(now())
+}
+
+model SystemAlert {
+  id        String   @id @default(cuid())
+  severity  String   @default("MEDIUM")
+  type      String?
+  message   String?
+  status    String   @default("OPEN")
+  createdAt DateTime @default(now())
+}
