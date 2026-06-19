@@ -1,7 +1,12 @@
 import { PrismaClient } from "@prisma/client";
+import { PrismaPg } from "@prisma/adapter-pg";
+import { loadEnvFile } from "process";
 import bcrypt from "bcryptjs";
 
-const prisma = new PrismaClient();
+loadEnvFile(".env");
+
+const adapter = new PrismaPg(process.env.DATABASE_URL || "");
+const prisma = new PrismaClient({ adapter });
 
 const ADMINS = [
   { email: "admin@quicksend.com", password: "admin123", role: "SUPER_ADMIN" },
@@ -11,13 +16,51 @@ const ADMINS = [
 ];
 
 async function main() {
-  for (const admin of ADMINS) {
-    const existing = await prisma.adminUser.findUnique({ where: { email: admin.email } });
-    if (existing) {
-      console.log(`Admin ${admin.email} already exists — skipping`);
-      continue;
-    }
+  console.log("Clearing all data...");
 
+  // Delete in FK-safe order
+  await prisma.notificationDelivery.deleteMany();
+  await prisma.notification.deleteMany();
+  await prisma.eventLog.deleteMany();
+  await prisma.event.deleteMany();
+  await prisma.idempotencyKey.deleteMany();
+  await prisma.partnerSlaMetric.deleteMany();
+  await prisma.partnerWebhook.deleteMany();
+  await prisma.partnerTransaction.deleteMany();
+  await prisma.partner.deleteMany();
+  await prisma.riskScore.deleteMany();
+  await prisma.complianceCase.deleteMany();
+  await prisma.sanctionsHit.deleteMany();
+  await prisma.amlCheck.deleteMany();
+  await prisma.kycDocument.deleteMany();
+  await prisma.kycProfile.deleteMany();
+  await prisma.withdrawal.deleteMany();
+  await prisma.depositWallet.deleteMany();
+  await prisma.depositRequest.deleteMany();
+  await prisma.ledgerEntry.deleteMany();
+  await prisma.walletTransaction.deleteMany();
+  await prisma.walletAddress.deleteMany();
+  await prisma.wallet.deleteMany();
+  await prisma.userCryptoWallet.deleteMany();
+  await prisma.otpCode.deleteMany();
+  await prisma.payoutEvent.deleteMany();
+  await prisma.partnerLog.deleteMany();
+  await prisma.payoutOrder.deleteMany();
+  await prisma.transfer.deleteMany();
+  await prisma.beneficiary.deleteMany();
+  await prisma.fxRate.deleteMany();
+  await prisma.feeRule.deleteMany();
+  await prisma.treasuryMovement.deleteMany();
+  await prisma.treasuryWallet.deleteMany();
+  await prisma.liquiditySnapshot.deleteMany();
+  await prisma.adminActionLog.deleteMany();
+  await prisma.adminUser.deleteMany();
+  await prisma.user.deleteMany();
+
+  console.log("All data cleared.");
+
+  // Seed admins
+  for (const admin of ADMINS) {
     const passwordHash = await bcrypt.hash(admin.password, 12);
     await prisma.adminUser.create({
       data: {
@@ -27,8 +70,23 @@ async function main() {
         status: "ACTIVE",
       },
     });
-    console.log(`Created admin ${admin.email} with role ${admin.role}`);
+    console.log(`Created admin ${admin.email} (${admin.role})`);
   }
+
+  // Seed user
+  const passwordHash = await bcrypt.hash("12345678", 12);
+  await prisma.user.create({
+    data: {
+      email: "anderson5091@gmail.com",
+      phone: "+50934552439",
+      phoneVerified: true,
+      password: passwordHash,
+      fullName: "Anderson Nazaire",
+    },
+  });
+  console.log("Created user: Anderson Nazaire (anderson5091@gmail.com)");
+
+  console.log("Seed complete.");
 }
 
 main()

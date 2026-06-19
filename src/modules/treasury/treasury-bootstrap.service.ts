@@ -16,6 +16,16 @@ export class TreasuryBootstrapService {
 
     const networks = ENV.SUPPORTED_NETWORKS;
     const chains = ENV.NETWORK_CHAIN;
+    const allWallets: Array<{
+      walletType: string;
+      chain: string;
+      network: string;
+      address: string;
+      crossmintWalletId: string;
+      walletLocator: string;
+      owner?: string;
+      alias?: string;
+    }> = [];
 
     for (let i = 0; i < networks.length; i++) {
       const networkLabel = networks[i];
@@ -34,6 +44,14 @@ export class TreasuryBootstrapService {
 
         if (existing) {
           logger.info(`[TreasuryBootstrap] ${config.walletType} wallet exists for ${networkLabel}: ${existing.address}`);
+          allWallets.push({
+            walletType: existing.walletType,
+            chain: existing.chain,
+            network: existing.network,
+            address: existing.address,
+            crossmintWalletId: existing.crossmintWalletId || "",
+            walletLocator: existing.walletLocator || "",
+          });
           continue;
         }
 
@@ -54,13 +72,28 @@ export class TreasuryBootstrapService {
           });
 
           logger.info(`[TreasuryBootstrap] Created ${config.walletType} wallet on ${networkLabel} (${chain}): ${created.address}`);
+
+          allWallets.push({
+            walletType: config.walletType,
+            chain: created.chain,
+            network: config.network,
+            address: created.address,
+            crossmintWalletId: created.crossmintWalletId,
+            walletLocator: created.walletLocator,
+            owner: created.owner,
+            alias: created.alias,
+          });
         } catch (error) {
           logger.error(`[TreasuryBootstrap] Failed to create ${config.walletType} wallet on ${networkLabel}:`, error);
         }
       }
     }
 
-    logger.info("[TreasuryBootstrap] Treasury wallet bootstrap complete");
+    logger.info("[TreasuryBootstrap] === Treasury Wallet Summary ===");
+    for (const w of allWallets) {
+      logger.info(`[TreasuryBootstrap] ${w.network} | ${w.walletType} | ${w.address} | owner=${w.owner || "—"} | alias=${w.alias || "—"}`);
+    }
+    logger.info(`[TreasuryBootstrap] Treasury wallet bootstrap complete — ${allWallets.length} wallets`);
   }
 }
 

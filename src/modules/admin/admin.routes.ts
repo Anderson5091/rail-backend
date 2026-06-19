@@ -45,21 +45,31 @@ router.get("/dashboard", authenticate, requireRole("SUPER_ADMIN", "COMPLIANCE", 
 router.get("/users", authenticate, requireRole("SUPER_ADMIN", "OPS"), async (_req: AuthRequest, res: Response) => {
   const users = await prisma.user.findMany({
     select: {
-      id: true, email: true, fullName: true, status: true, createdAt: true,
-      kycProfile: { select: { tier: true, status: true } },
+      id: true, email: true, fullName: true, createdAt: true,
+      kycProfile: { select: { tier: true } },
+      wallets: { take: 1, select: { status: true } },
       _count: { select: { transfers: true } },
     },
     orderBy: { createdAt: "desc" },
     take: 100,
   });
-  res.json(users.map((u: { id: string; email: string; fullName: string | null; status: string | null; createdAt: Date; kycProfile: { tier: number | null; status: string | null } | null; _count: { transfers: number } }) => ({
+
+  const userIds = users.map((u: { id: string }) => u.id);
+  const volumeRows = await prisma.transfer.groupBy({
+    by: ["userId"],
+    where: { userId: { in: userIds }, status: { in: ["PENDING_PAYOUT", "SENT_TO_PARTNER"] } },
+    _sum: { amount: true },
+  });
+  const volumeMap = new Map(volumeRows.map((r: { userId: string; _sum: { amount: unknown } }) => [r.userId, Number(r._sum.amount) || 0]));
+
+  res.json(users.map((u: { id: string; email: string; fullName: string | null; createdAt: Date; kycProfile: { tier: number | null } | null; wallets: { status: string }[]; _count: { transfers: number } }) => ({
     id: u.id,
     email: u.email,
     name: u.fullName || u.email,
-    status: u.status || "ACTIVE",
+    status: u.wallets[0]?.status || "ACTIVE",
     kycTier: u.kycProfile?.tier ?? 0,
     totalTransfers: u._count.transfers,
-    totalVolume: 0,
+    totalVolume: volumeMap.get(u.id) || 0,
     createdAt: u.createdAt,
   })));
 });

@@ -11,6 +11,8 @@ export interface CrossmintWalletResult {
   walletLocator: string;
   address: string;
   chain: string;
+  owner?: string;
+  alias?: string;
 }
 
 class CrossmintService {
@@ -41,15 +43,7 @@ class CrossmintService {
   ): Promise<CrossmintWalletResult> {
     await this.ensureInitialized();
 
-    const recoverySecret =
-      type === "DEPOSIT"
-        ? ENV.WALLET_RECOVERY_SECRET
-        : ENV.TREASURY_RECOVERY_SECRET;
-
-    const signerSecret =
-      type === "DEPOSIT"
-        ? ENV.WALLET_SIGNER_SECRET
-        : ENV.TREASURY_SIGNER_SECRET;
+    const recoverySecret = ENV.WALLET_RECOVERY_SECRET;
 
     try {
       const wallet = await this.walletsSdk.createWallet({
@@ -58,9 +52,6 @@ class CrossmintService {
           type: "server",
           secret: recoverySecret,
         },
-        signers: [
-          { type: "server", secret: signerSecret },
-        ],
       });
 
       return {
@@ -68,6 +59,8 @@ class CrossmintService {
         walletLocator: wallet.address,
         address: wallet.address,
         chain: String(chain),
+        owner: wallet.owner,
+        alias: wallet.alias,
       };
     } catch (error) {
       logger.error(`[Crossmint] Failed to create ${type} wallet:`, error);
