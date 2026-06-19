@@ -19,36 +19,42 @@ router.get("/overview", authenticate, async (_req: AuthRequest, res: Response) =
     take: 7,
   });
 
-  const totalLiquidity = wallets.reduce(
-    (sum: number, w: { balance: { toString: () => string } }) => sum + Number(w.balance),
-    0
+  const results = await Promise.allSettled(
+    wallets
+      .filter((w: { walletLocator: string | null }) => w.walletLocator)
+      .map(async (wallet: { walletLocator: string; chain: string; walletType: string; network: string }) => {
+        const chain = wallet.chain as "base" | "ethereum" | "polygon" | "solana";
+        const balances = await crossmintService.getWalletBalance(wallet.walletLocator, ["usdt", "usdxm"], chain);
+        return { key: `${wallet.walletType}_${wallet.network}`, balances };
+      })
   );
-  const hotTotal = wallets
-    .filter((w: { walletType: string }) => w.walletType === "HOT")
-    .reduce((sum: number, w: { balance: { toString: () => string } }) => sum + Number(w.balance), 0);
-  const warmTotal = wallets
-    .filter((w: { walletType: string }) => w.walletType === "WARM")
-    .reduce((sum: number, w: { balance: { toString: () => string } }) => sum + Number(w.balance), 0);
-  const coldTotal = wallets
-    .filter((w: { walletType: string }) => w.walletType === "COLD")
-    .reduce((sum: number, w: { balance: { toString: () => string } }) => sum + Number(w.balance), 0);
-  const networks = [...new Set(wallets.map((w: { network: string }) => w.network))];
 
   const onChainBalances: Record<string, number> = {};
-  for (const wallet of wallets) {
-    if (wallet.walletLocator) {
-      try {
-        const chain = wallet.chain as "base" | "ethereum" | "polygon" | "solana";
-        const balances = await crossmintService.getWalletBalance(wallet.walletLocator, ["usdt"], chain);
-        const bal = extractBalance(balances, "usdt");
-        onChainBalances[`${wallet.walletType}_${wallet.network}`] = bal;
-      } catch {
-        onChainBalances[`${wallet.walletType}_${wallet.network}`] = 0;
-      }
+  for (const result of results) {
+    if (result.status === "fulfilled") {
+      const bal = extractBalance(result.value.balances, "usdt") || extractBalance(result.value.balances, "usdxm") || 0;
+      onChainBalances[result.value.key] = bal;
     }
   }
 
-  res.json({ totalLiquidity, hotTotal, warmTotal, coldTotal, networks, wallets, recentMovements: movements, snapshots });
+  const walletsWithBalance = wallets.map((w: { walletType: string; network: string; balance: { toString: () => string } }) => ({
+    ...w,
+    balance: onChainBalances[`${w.walletType}_${w.network}`] ?? Number(w.balance),
+  }));
+
+  const totalLiquidity = walletsWithBalance.reduce((sum: number, w: { balance: number }) => sum + w.balance, 0);
+  const hotTotal = walletsWithBalance
+    .filter((w: { walletType: string }) => w.walletType === "HOT")
+    .reduce((sum: number, w: { balance: number }) => sum + w.balance, 0);
+  const warmTotal = walletsWithBalance
+    .filter((w: { walletType: string }) => w.walletType === "WARM")
+    .reduce((sum: number, w: { balance: number }) => sum + w.balance, 0);
+  const coldTotal = walletsWithBalance
+    .filter((w: { walletType: string }) => w.walletType === "COLD")
+    .reduce((sum: number, w: { balance: number }) => sum + w.balance, 0);
+  const networks = [...new Set(wallets.map((w: { network: string }) => w.network))];
+
+  res.json({ totalLiquidity, hotTotal, warmTotal, coldTotal, networks, wallets: walletsWithBalance, recentMovements: movements, snapshots });
 });
 
 router.get("/liquidity", authenticate, async (_req: AuthRequest, res: Response) => {
@@ -83,20 +89,21 @@ router.get("/crossmint-balances", authenticate, requireRole("SUPER_ADMIN", "TREA
     where: { walletLocator: { not: null } },
   });
 
+  const results = await Promise.allSettled(
+    wallets.map(async (wallet: { walletLocator: string; chain: string; walletType: string; network: string; address: string }) => {
+      const chain = wallet.chain as "base" | "ethereum" | "polygon" | "solana";
+      const bal = await crossmintService.getWalletBalance(wallet.walletLocator, ["usdt", "usdxm"], chain);
+      return {
+        key: `${wallet.walletType}_${wallet.network}`,
+        data: { address: wallet.address, chain: wallet.chain, balance: extractBalance(bal, "usdt") || extractBalance(bal, "usdxm") || 0, walletLocator: wallet.walletLocator },
+      };
+    })
+  );
+
   const balances: Record<string, unknown> = {};
-  for (const wallet of wallets) {
-    if (wallet.walletLocator) {
-      try {
-        const bal = await crossmintService.getWalletBalance(wallet.walletLocator, ["usdt"]);
-        balances[`${wallet.walletType}_${wallet.network}`] = {
-          address: wallet.address,
-          chain: wallet.chain,
-          balance: bal,
-          walletLocator: wallet.walletLocator,
-        };
-      } catch {
-        balances[`${wallet.walletType}_${wallet.network}`] = { error: "Failed to fetch balance" };
-      }
+  for (const result of results) {
+    if (result.status === "fulfilled") {
+      balances[result.value.key] = result.value.data;
     }
   }
 
@@ -104,16 +111,14 @@ router.get("/crossmint-balances", authenticate, requireRole("SUPER_ADMIN", "TREA
 });
 
 function extractBalance(balances: unknown, token: string): number {
-  if (typeof balances === "object" && balances !== null) {
-    if (Array.isArray(balances)) {
-      const entry = balances.find(
-        (b: Record<string, unknown>) =>
-          String(b.token || "").toLowerCase() === token ||
-          String(b.symbol || "").toLowerCase() === token
-      );
-      return entry ? Number(entry.amount || entry.balance || 0) : 0;
-    }
-    return Number((balances as Record<string, unknown>)[token] || 0);
+  if (typeof balances !== "object" || balances === null) return 0;
+  const entry = (balances as Record<string, unknown>)[token];
+  if (!entry) return 0;
+  if (typeof entry === "number") return entry;
+  if (typeof entry === "string") return Number(entry) || 0;
+  if (typeof entry === "object" && entry !== null) {
+    const amt = (entry as Record<string, unknown>).amount;
+    return Number(amt) || 0;
   }
   return 0;
 }
