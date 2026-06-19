@@ -35,7 +35,7 @@ async function main() {
   await prisma.kycDocument.deleteMany();
   await prisma.kycProfile.deleteMany();
   await prisma.withdrawal.deleteMany();
-  await prisma.depositAddress.deleteMany();
+  await prisma.depositWallet.deleteMany();
   await prisma.depositRequest.deleteMany();
   await prisma.ledgerEntry.deleteMany();
   await prisma.walletTransaction.deleteMany();

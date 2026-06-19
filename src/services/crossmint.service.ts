@@ -40,19 +40,30 @@ class CrossmintService {
   async createWallet(
     chain: ChainType,
     type: WalletType = "DEPOSIT",
+    userId?: string,
+    alias?: string
   ): Promise<CrossmintWalletResult> {
     await this.ensureInitialized();
 
     const recoverySecret = ENV.WALLET_RECOVERY_SECRET;
 
     try {
-      const wallet = await this.walletsSdk.createWallet({
+      const params: any = {
         chain,
         recovery: {
           type: "server",
           secret: recoverySecret,
         },
-      });
+      };
+
+      if (userId) {
+        params.linkedUser = `user:${userId}`;
+      }
+      if (alias) {
+        params.alias = alias;
+      }
+
+      const wallet = await this.walletsSdk.createWallet(params);
 
       return {
         crossmintWalletId: wallet.address,

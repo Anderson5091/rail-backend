@@ -14,54 +14,41 @@ const CHAIN_MAP: Record<string, { chain: ChainType; alias: string }> = {
 const REQUIRED_CONFIRMATIONS = 5;
 
 export class DepositService {
-  async ensureUserWallets(userId: string) {
-    const evmChain = ENV.NETWORK_CHAIN[ENV.SUPPORTED_NETWORKS.indexOf("BASE")] as ChainType;
-    const solanaChain = ENV.NETWORK_CHAIN[ENV.SUPPORTED_NETWORKS.indexOf("SOLANA")] as ChainType;
-
-    const configs = [
-      { alias: "evm", chain: evmChain || ("base-sepolia" as ChainType) },
-      { alias: "solana", chain: solanaChain || ("solana" as ChainType) },
-    ];
-
-    for (const cfg of configs) {
-      const existing = await prisma.depositWallet.findUnique({
-        where: { userId_alias: { userId, alias: cfg.alias } },
-      });
-      if (existing) continue;
-
-      try {
-        const wallet = await crossmintService.createWallet(cfg.chain, "DEPOSIT");
-        await prisma.depositWallet.create({
-          data: {
-            userId,
-            alias: cfg.alias,
-            crossmintWalletId: wallet.crossmintWalletId,
-            walletLocator: wallet.walletLocator,
-            address: wallet.address,
-            chain: cfg.chain,
-          },
-        });
-        logger.info(`[Deposit] Created ${cfg.alias} wallet for user ${userId}: ${wallet.address}`);
-      } catch (error) {
-        logger.error(`[Deposit] Failed to create ${cfg.alias} wallet for user ${userId}:`, error);
-      }
-    }
-  }
-
   async createDepositRequest(userId: string, chain: string, token: string = "USDT") {
     const mapping = CHAIN_MAP[chain.toUpperCase()];
     if (!mapping) {
       throw new Error(`Unsupported chain: ${chain}`);
     }
 
-    await this.ensureUserWallets(userId);
+    const alias = token.toLowerCase();
 
-    const depositWallet = await prisma.depositWallet.findFirst({
-      where: { userId, alias: mapping.alias },
+    let depositWallet = await prisma.depositWallet.findUnique({
+      where: { userId_alias: { userId, alias } },
     });
 
     if (!depositWallet) {
-      throw new Error(`No ${mapping.alias} wallet found. Create a wallet first.`);
+      try {
+        const wallet = await crossmintService.createWallet(
+          mapping.chain,
+          "DEPOSIT",
+          userId,
+          alias
+        );
+        depositWallet = await prisma.depositWallet.create({
+          data: {
+            userId,
+            alias,
+            crossmintWalletId: wallet.crossmintWalletId,
+            walletLocator: wallet.walletLocator,
+            address: wallet.address,
+            chain: mapping.chain,
+          },
+        });
+        logger.info(`[Deposit] Created ${alias} wallet for user ${userId}: ${wallet.address}`);
+      } catch (error) {
+        logger.error(`[Deposit] Failed to create wallet for user ${userId}:`, error);
+        throw new Error("Failed to create deposit wallet");
+      }
     }
 
     const depositRequest = await prisma.depositRequest.create({
