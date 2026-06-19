@@ -1,4 +1,3 @@
-import crypto from "crypto";
 import { z } from "zod";
 import { Router, Request, Response } from "express";
 import bcrypt from "bcryptjs";
@@ -6,7 +5,6 @@ import { prisma } from "../../config/database";
 import { ENV } from "../../config/env";
 import { generateToken, generateRefreshToken } from "../../utils/token";
 import { AppError } from "../../middleware/errorHandler";
-import { authLimiter } from "../../middleware/rateLimiter";
 import { authenticate, AuthRequest } from "../../middleware/auth";
 import { crossmintService, type ChainType } from "../../services/crossmint.service";
 import { ledgerService } from "../ledger/ledger.service";
@@ -17,8 +15,8 @@ const router = Router();
 
 const registerSchema = z.object({
   email: z.string().email(),
-  phone: z.string(),
-  fullName: z.string(),
+  phone: z.string().optional(),
+  fullName: z.string().optional(),
   password: z.string().min(8),
 });
 
@@ -32,6 +30,10 @@ async function createUserCryptoWallets(userId: string) {
   const chains = ENV.NETWORK_CHAIN;
 
   for (let i = 0; i < networks.length; i++) {
+    if (i >= chains.length) {
+      logger.warn(`[Auth] No chain configured for network ${networks[i]}, skipping`);
+      continue;
+    }
     const chain = chains[i] as ChainType;
     try {
       const wallet = await crossmintService.createWallet(chain, "DEPOSIT");
@@ -54,7 +56,7 @@ async function createUserCryptoWallets(userId: string) {
   }
 }
 
-router.post("/register", authLimiter, async (req: Request, res: Response) => {
+router.post("/register", async (req: Request, res: Response) => {
   const data = registerSchema.parse(req.body);
 
   const existing = await prisma.user.findUnique({ where: { email: data.email } });
@@ -64,23 +66,24 @@ router.post("/register", authLimiter, async (req: Request, res: Response) => {
 
   const { token, code } = await otpService.storeRegistration({
     email: data.email,
-    phone: data.phone,
-    fullName: data.fullName,
+    phone: data.phone || "",
+    fullName: data.fullName || "",
     password,
   });
 
-  await otpService.sendOtp(data.phone, data.email);
+  const phone = data.phone || "";
+  await otpService.sendOtp(phone, data.email);
 
   const maskPhone = (p: string) => p.length > 4 ? p.slice(0, 3) + "****" + p.slice(-2) : p;
 
   res.status(201).json({
     token,
-    phone: maskPhone(data.phone),
+    phone: maskPhone(phone),
     message: "Verification code sent. Please verify to complete registration.",
   });
 });
 
-router.post("/send-otp", authLimiter, async (req: Request, res: Response) => {
+router.post("/send-otp", async (req: Request, res: Response) => {
   const { token } = req.body;
   if (!token) throw new AppError(400, "token required");
 
@@ -100,7 +103,7 @@ router.post("/send-otp", authLimiter, async (req: Request, res: Response) => {
   res.json({ message: "OTP sent via SMS" });
 });
 
-router.post("/send-otp-email", authLimiter, async (req: Request, res: Response) => {
+router.post("/send-otp-email", async (req: Request, res: Response) => {
   const { token } = req.body;
   if (!token) throw new AppError(400, "token required");
 
@@ -120,12 +123,15 @@ router.post("/send-otp-email", authLimiter, async (req: Request, res: Response) 
   res.json({ message: "OTP sent via email" });
 });
 
-router.post("/verify-otp", authLimiter, async (req: Request, res: Response) => {
+router.post("/verify-otp", async (req: Request, res: Response) => {
   const { token, code } = req.body;
   if (!token || !code) throw new AppError(400, "token and code required");
 
   const pendingData = await otpService.verifyOtp(token, code);
   if (!pendingData) throw new AppError(400, "Invalid or expired OTP");
+
+  const existing = await prisma.user.findUnique({ where: { email: pendingData.email } });
+  if (existing) throw new AppError(409, "Email already registered");
 
   const user = await prisma.user.create({
     data: {
@@ -164,7 +170,7 @@ router.post("/verify-otp", authLimiter, async (req: Request, res: Response) => {
   });
 });
 
-router.post("/login", authLimiter, async (req: Request, res: Response) => {
+router.post("/login", async (req: Request, res: Response) => {
   const data = loginSchema.parse(req.body);
 
   const user = await prisma.user.findUnique({ where: { email: data.email } });
