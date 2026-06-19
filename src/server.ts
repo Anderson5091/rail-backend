@@ -8,6 +8,7 @@ import { registerEventHooks } from "./modules/events/event.hooks";
 import { loggerService } from "./modules/production/observability/logger.service";
 import { backupService } from "./modules/production/disaster-recovery/backup.service";
 import { initializeTreasuryInfrastructure } from "./modules/treasury/treasury-initializer";
+import { redisService } from "./services/redis.service";
 
 async function main() {
   try {
@@ -22,6 +23,8 @@ async function main() {
 
   registerEventHooks();
   setupWebSocket(httpServer);
+
+  await redisService.connect();
 
   retryWorker.start();
 
