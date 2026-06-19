@@ -2,7 +2,7 @@ import crypto from "crypto";
 import { prisma } from "../../config/database";
 import { ENV } from "../../config/env";
 import { logger } from "../../utils/logger";
-import { BrevoClient } from "@getbrevo/brevo";
+import { Resend } from "resend";
 
 function generateOtpCode(): string {
   return Math.floor(100000 + Math.random() * 900000).toString();
@@ -12,32 +12,37 @@ function generateToken(): string {
   return crypto.randomUUID();
 }
 
-async function sendSms(phone: string, code: string): Promise<boolean> {
-  if (!ENV.BREVO_API_KEY) {
-    logger.warn("[OTP] Brevo API key not configured, skipping SMS");
+const resendClient = ENV.RESEND_API_KEY ? new Resend(ENV.RESEND_API_KEY) : null;
+
+async function sendEmail(email: string, code: string): Promise<boolean> {
+  if (!resendClient) {
+    logger.info(`[OTP] Resend not configured - code for ${email}: ${code}`);
     return false;
   }
 
   try {
-    const apiInstance = new BrevoClient({ apiKey: ENV.BREVO_API_KEY });
-
-    await apiInstance.transactionalSms.sendTransacSms({
-      sender: ENV.BREVO_SMS_SENDER,
-      recipient: phone,
-      content: `Your Quick Send verification code is ${code}. It expires in 5 minutes.`,
-      type: "transactional",
+    await resendClient.emails.send({
+      from: ENV.RESEND_FROM || "Quick Send <noreply@quicksend.com.mx>",
+      to: email,
+      subject: "Your Quick Send verification code",
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto; padding: 24px;">
+          <h2 style="color: #1a73e8;">Quick Send Verification</h2>
+          <p>Your verification code is:</p>
+          <div style="font-size: 32px; font-weight: bold; letter-spacing: 8px; text-align: center; padding: 16px; background: #f5f5f5; border-radius: 8px; margin: 16px 0;">
+            ${code}
+          </div>
+          <p style="color: #666;">This code expires in 5 minutes.</p>
+        </div>
+      `,
     });
 
-    logger.info(`[OTP] SMS sent to ${phone}`);
+    logger.info(`[OTP] Email sent to ${email}`);
     return true;
   } catch (error: any) {
-    logger.error(`[OTP] SMS failed for ${phone}: ${error.message}`);
+    logger.error(`[OTP] Email failed for ${email}: ${error.message}`);
     return false;
   }
-}
-
-async function sendEmailNative(email: string, code: string): Promise<void> {
-  logger.info(`[OTP] Email verification code for ${email}: ${code}`);
 }
 
 export const otpService = {
@@ -45,15 +50,10 @@ export const otpService = {
 
   async sendOtp(phone: string, email: string): Promise<string> {
     const code = generateOtpCode();
-    const smsSent = await sendSms(phone, code);
+    const emailSent = await sendEmail(email, code);
 
-    if (!smsSent) {
-      logger.info(`[OTP] SMS failed, sending code via email to ${email}`);
-      await sendEmailNative(email, code);
-    }
-
-    if (!smsSent) {
-      logger.info(`[OTP] No delivery channel available - code for ${email}: ${code}`);
+    if (!emailSent) {
+      logger.info(`[OTP] Email failed, code for ${email}: ${code}`);
     }
 
     return code;
@@ -61,7 +61,7 @@ export const otpService = {
 
   async sendOtpEmailOnly(email: string): Promise<string> {
     const code = generateOtpCode();
-    await sendEmailNative(email, code);
+    await sendEmail(email, code);
     return code;
   },
 

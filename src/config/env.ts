@@ -13,6 +13,10 @@ export const ENV = {
   BACKUP_DIR: process.env.BACKUP_DIR || "./backups",
   REDIS_URL: process.env.REDIS_URL || "",
 
+  // Resend (Email) Configuration
+  RESEND_API_KEY: process.env.RESEND_API_KEY || "",
+  RESEND_FROM: process.env.RESEND_FROM || "Quick Send <noreply@quicksend.com.mx>",
+
   // Brevo (SMS/Email) Configuration
   BREVO_API_KEY: process.env.BREVO_API_KEY || "",
   BREVO_EMAIL_API_KEY: process.env.BREVO_EMAIL_API_KEY || "",
