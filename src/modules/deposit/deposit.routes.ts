@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { Router, Response } from "express";
+import { Router, Request, Response } from "express";
 import { prisma } from "../../config/database";
 import { authenticate, AuthRequest } from "../../middleware/auth";
 import { depositService } from "./deposit.service";
@@ -26,6 +26,15 @@ router.get("/:id/address", authenticate, async (req: AuthRequest, res: Response)
   res.json(address);
 });
 
+router.get("/:id/status", authenticate, async (req: AuthRequest, res: Response) => {
+  const id = String(req.params.id);
+  const status = await depositService.getDepositStatus(id);
+  if (!status) {
+    return res.status(404).json({ error: "Deposit request not found" });
+  }
+  res.json(status);
+});
+
 router.get("/", authenticate, async (req: AuthRequest, res: Response) => {
   const deposits = await prisma.depositRequest.findMany({
     where: { userId: req.userId },
@@ -43,10 +52,20 @@ const detectSchema = z.object({
   chain: z.string(),
 });
 
-router.post("/webhook/detect", async (req: AuthRequest, res: Response) => {
+router.post("/webhook/detect", async (req: Request, res: Response) => {
   const data = detectSchema.parse(req.body);
   await depositService.handleDepositDetected(data.crossmintWalletId, data.txHash, data.amount, data.chain);
   res.json({ ok: true });
+});
+
+const confirmSchema = z.object({
+  depositRequestId: z.string(),
+});
+
+router.post("/webhook/confirm", async (req: Request, res: Response) => {
+  const data = confirmSchema.parse(req.body);
+  const result = await depositService.confirmDeposit(data.depositRequestId);
+  res.json(result);
 });
 
 export { router as depositRoutes };

@@ -41,6 +41,7 @@ export class DepositService {
         address: userWallet.address,
         chain: chainType,
         status: "CREATED",
+        expiresAt: new Date(Date.now() + 5 * 60 * 1000),
       },
     });
 
@@ -256,6 +257,49 @@ export class DepositService {
       address: depositAddress.address,
       status: depositAddress.status,
     };
+  }
+
+  async getDepositStatus(depositRequestId: string) {
+    const depositRequest = await prisma.depositRequest.findUnique({
+      where: { id: depositRequestId },
+      include: { depositAddress: true },
+    });
+
+    if (!depositRequest) return null;
+
+    return {
+      depositId: depositRequest.id,
+      network: depositRequest.chain,
+      amount: depositRequest.amount?.toString(),
+      fee: depositRequest.fee?.toString(),
+      netAmount: depositRequest.netAmount?.toString(),
+      txHash: depositRequest.txHash,
+      confirmations: depositRequest.confirmations,
+      status: depositRequest.status,
+      address: depositRequest.depositAddress?.address || null,
+      addressStatus: depositRequest.depositAddress?.status || null,
+      expiresAt: depositRequest.depositAddress?.expiresAt?.toISOString() || null,
+      createdAt: depositRequest.createdAt.toISOString(),
+    };
+  }
+
+  async confirmDeposit(depositRequestId: string) {
+    const depositRequest = await prisma.depositRequest.findUnique({
+      where: { id: depositRequestId },
+    });
+
+    if (!depositRequest) throw new Error("Deposit request not found");
+
+    const next = depositRequest.confirmations + 1;
+
+    await prisma.depositRequest.update({
+      where: { id: depositRequestId },
+      data: { confirmations: next },
+    });
+
+    logger.info(`[Deposit] Confirmations for ${depositRequestId}: ${next}`);
+
+    return { confirmations: next };
   }
 }
 
