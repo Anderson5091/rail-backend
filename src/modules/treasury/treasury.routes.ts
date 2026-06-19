@@ -24,7 +24,7 @@ router.get("/overview", authenticate, async (_req: AuthRequest, res: Response) =
       .filter((w: { walletLocator: string | null }) => w.walletLocator)
       .map(async (wallet: { walletLocator: string; chain: string; walletType: string; network: string }) => {
         const chain = wallet.chain as "base" | "ethereum" | "polygon" | "solana";
-        const balances = await crossmintService.getWalletBalance(wallet.walletLocator, ["usdt", "usdxm"], chain);
+        const balances = await crossmintService.getWalletBalance(wallet.walletLocator, ["usdc", "usdt", "usdxm"], chain);
         return { key: `${wallet.walletType}_${wallet.network}`, balances };
       })
   );
@@ -32,7 +32,7 @@ router.get("/overview", authenticate, async (_req: AuthRequest, res: Response) =
   const onChainBalances: Record<string, number> = {};
   for (const result of results) {
     if (result.status === "fulfilled") {
-      const bal = extractBalance(result.value.balances, "usdt") || extractBalance(result.value.balances, "usdxm") || 0;
+      const bal = extractBalance(result.value.balances, "usdc") || extractBalance(result.value.balances, "usdt") || extractBalance(result.value.balances, "usdxm") || 0;
       onChainBalances[result.value.key] = bal;
     }
   }
@@ -92,10 +92,10 @@ router.get("/crossmint-balances", authenticate, requireRole("SUPER_ADMIN", "TREA
   const results = await Promise.allSettled(
     wallets.map(async (wallet: { walletLocator: string; chain: string; walletType: string; network: string; address: string }) => {
       const chain = wallet.chain as "base" | "ethereum" | "polygon" | "solana";
-      const bal = await crossmintService.getWalletBalance(wallet.walletLocator, ["usdt", "usdxm"], chain);
+      const bal = await crossmintService.getWalletBalance(wallet.walletLocator, ["usdc", "usdt", "usdxm"], chain);
       return {
         key: `${wallet.walletType}_${wallet.network}`,
-        data: { address: wallet.address, chain: wallet.chain, balance: extractBalance(bal, "usdt") || extractBalance(bal, "usdxm") || 0, walletLocator: wallet.walletLocator },
+        data: { address: wallet.address, chain: wallet.chain, balance: extractBalance(bal, "usdc") || extractBalance(bal, "usdt") || extractBalance(bal, "usdxm") || 0, walletLocator: wallet.walletLocator },
       };
     })
   );
@@ -112,8 +112,27 @@ router.get("/crossmint-balances", authenticate, requireRole("SUPER_ADMIN", "TREA
 
 function extractBalance(balances: unknown, token: string): number {
   if (typeof balances !== "object" || balances === null) return 0;
+  // Check the tokens array for the requested token
+  const tokensArray = (balances as Record<string, unknown>).tokens;
+  if (Array.isArray(tokensArray)) {
+    const match = tokensArray.find(
+      (t: Record<string, unknown>) =>
+        String(t.symbol || "").toLowerCase() === token.toLowerCase()
+    );
+    if (match) return Number(match.amount) || 0;
+  }
+  // Fall back to named property (e.g. balances.usdc / balances.usdxm / balances.nativeToken)
   const entry = (balances as Record<string, unknown>)[token];
-  if (!entry) return 0;
+  if (!entry) {
+    // Also try nativeToken as fallback for native chain tokens
+    if (token === "native") {
+      const native = (balances as Record<string, unknown>).nativeToken;
+      if (native && typeof native === "object") {
+        return Number((native as Record<string, unknown>).amount) || 0;
+      }
+    }
+    return 0;
+  }
   if (typeof entry === "number") return entry;
   if (typeof entry === "string") return Number(entry) || 0;
   if (typeof entry === "object" && entry !== null) {
