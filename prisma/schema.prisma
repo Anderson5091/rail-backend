@@ -26,8 +26,8 @@ model User {
   complianceCases ComplianceCase[]
   riskScore       RiskScore?
   notifications   Notification[]
-  cryptoWallets   UserCryptoWallet[]
   otpCodes        OtpCode[]
+  depositWallets  DepositWallet[]
 }
 
 model OtpCode {
@@ -43,21 +43,6 @@ model OtpCode {
   createdAt DateTime @default(now())
 
   user User? @relation(fields: [userId], references: [id])
-}
-
-model UserCryptoWallet {
-  id                String   @id @default(cuid())
-  userId            String
-  network           String
-  chain             String
-  crossmintWalletId String   @unique
-  walletLocator     String
-  address           String
-  createdAt         DateTime @default(now())
-
-  user User @relation(fields: [userId], references: [id])
-
-  @@unique([userId, chain])
 }
 
 model Wallet {
@@ -250,6 +235,7 @@ model LiquiditySnapshot {
 model DepositRequest {
   id        String   @id @default(cuid())
   userId    String
+  depositWalletId String?
   chain     String
   token     String   @default("USDT")
   amount    Decimal? @db.Decimal(24, 8)
@@ -261,21 +247,26 @@ model DepositRequest {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  depositAddress DepositAddress?
+  depositWallet DepositWallet? @relation(fields: [depositWalletId], references: [id])
 }
 
-model DepositAddress {
+model DepositWallet {
   id               String   @id @default(cuid())
-  depositRequestId String   @unique
+  userId           String
+  alias            String
   crossmintWalletId String
+  walletLocator    String
   address          String
   chain            String
-  status           String   @default("CREATED")
+  status           String   @default("ACTIVE")
   expiresAt        DateTime?
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
-  depositRequest DepositRequest @relation(fields: [depositRequestId], references: [id])
+  user User @relation(fields: [userId], references: [id])
+  depositRequests DepositRequest[]
+
+  @@unique([userId, alias])
 }
 
 model Withdrawal {

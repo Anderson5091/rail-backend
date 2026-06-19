@@ -25,33 +25,38 @@ const loginSchema = z.object({
   password: z.string(),
 });
 
-async function createUserCryptoWallets(userId: string) {
-  const networks = ENV.SUPPORTED_NETWORKS;
-  const chains = ENV.NETWORK_CHAIN;
+async function createUserDepositWallets(userId: string) {
+  const evmChain = ENV.NETWORK_CHAIN[ENV.SUPPORTED_NETWORKS.indexOf("BASE")] as ChainType;
+  const solanaChain = ENV.NETWORK_CHAIN[ENV.SUPPORTED_NETWORKS.indexOf("SOLANA")] as ChainType;
 
-  for (let i = 0; i < networks.length; i++) {
-    if (i >= chains.length) {
-      logger.warn(`[Auth] No chain configured for network ${networks[i]}, skipping`);
-      continue;
-    }
-    const chain = chains[i] as ChainType;
+  const walletConfigs = [
+    { alias: "evm", chain: evmChain || ("base-sepolia" as ChainType) },
+    { alias: "solana", chain: solanaChain || ("solana" as ChainType) },
+  ];
+
+  for (const cfg of walletConfigs) {
     try {
-      const wallet = await crossmintService.createWallet(chain, "DEPOSIT");
+      const existing = await prisma.depositWallet.findUnique({
+        where: { userId_alias: { userId, alias: cfg.alias } },
+      });
+      if (existing) continue;
 
-      await prisma.userCryptoWallet.create({
+      const wallet = await crossmintService.createWallet(cfg.chain, "DEPOSIT");
+
+      await prisma.depositWallet.create({
         data: {
           userId,
-          network: networks[i],
-          chain,
+          alias: cfg.alias,
           crossmintWalletId: wallet.crossmintWalletId,
           walletLocator: wallet.walletLocator,
           address: wallet.address,
+          chain: cfg.chain,
         },
       });
 
-      logger.info(`[Auth] Created ${networks[i]} crypto wallet for user ${userId}: ${wallet.address}`);
+      logger.info(`[Auth] Created ${cfg.alias} wallet for user ${userId}: ${wallet.address}`);
     } catch (error) {
-      logger.warn(`[Auth] Failed to create ${networks[i]} crypto wallet for user ${userId}:`, error);
+      logger.warn(`[Auth] Failed to create ${cfg.alias} wallet for user ${userId}:`, error);
     }
   }
 }
@@ -158,7 +163,7 @@ router.post("/verify-otp", async (req: Request, res: Response) => {
     },
   });
 
-  await createUserCryptoWallets(user.id);
+  await createUserDepositWallets(user.id);
 
   const jwt = generateToken(user.id);
   const refreshToken = generateRefreshToken(user.id);

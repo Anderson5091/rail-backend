@@ -17,15 +17,6 @@ router.post("/create", authenticate, async (req: AuthRequest, res: Response) => 
   res.status(201).json(result);
 });
 
-router.get("/:id/address", authenticate, async (req: AuthRequest, res: Response) => {
-  const id = String(req.params.id);
-  const address = await depositService.getDepositAddress(id);
-  if (!address) {
-    return res.status(404).json({ error: "Deposit request not found" });
-  }
-  res.json(address);
-});
-
 router.get("/:id/status", authenticate, async (req: AuthRequest, res: Response) => {
   const id = String(req.params.id);
   const status = await depositService.getDepositStatus(id);
@@ -38,7 +29,7 @@ router.get("/:id/status", authenticate, async (req: AuthRequest, res: Response) 
 router.get("/", authenticate, async (req: AuthRequest, res: Response) => {
   const deposits = await prisma.depositRequest.findMany({
     where: { userId: req.userId },
-    include: { depositAddress: true },
+    include: { depositWallet: true },
     orderBy: { createdAt: "desc" },
     take: 50,
   });

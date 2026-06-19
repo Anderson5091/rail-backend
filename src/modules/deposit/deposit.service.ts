@@ -1,48 +1,83 @@
 import { prisma } from "../../config/database";
 import { crossmintService, type ChainType } from "../../services/crossmint.service";
+import { ENV } from "../../config/env";
 import { ledgerService } from "../ledger/ledger.service";
 import { logger } from "../../utils/logger";
 
-const CHAIN_MAP: Record<string, ChainType> = {
-  BASE: "base",
-  ETHEREUM: "ethereum",
-  POLYGON: "polygon",
-  SOLANA: "solana",
+const CHAIN_MAP: Record<string, { chain: ChainType; alias: string }> = {
+  BASE: { chain: "base", alias: "evm" },
+  ETHEREUM: { chain: "ethereum", alias: "evm" },
+  POLYGON: { chain: "polygon", alias: "evm" },
+  SOLANA: { chain: "solana", alias: "solana" },
 };
 
+const REQUIRED_CONFIRMATIONS = 5;
+
 export class DepositService {
+  async ensureUserWallets(userId: string) {
+    const evmChain = ENV.NETWORK_CHAIN[ENV.SUPPORTED_NETWORKS.indexOf("BASE")] as ChainType;
+    const solanaChain = ENV.NETWORK_CHAIN[ENV.SUPPORTED_NETWORKS.indexOf("SOLANA")] as ChainType;
+
+    const configs = [
+      { alias: "evm", chain: evmChain || ("base-sepolia" as ChainType) },
+      { alias: "solana", chain: solanaChain || ("solana" as ChainType) },
+    ];
+
+    for (const cfg of configs) {
+      const existing = await prisma.depositWallet.findUnique({
+        where: { userId_alias: { userId, alias: cfg.alias } },
+      });
+      if (existing) continue;
+
+      try {
+        const wallet = await crossmintService.createWallet(cfg.chain, "DEPOSIT");
+        await prisma.depositWallet.create({
+          data: {
+            userId,
+            alias: cfg.alias,
+            crossmintWalletId: wallet.crossmintWalletId,
+            walletLocator: wallet.walletLocator,
+            address: wallet.address,
+            chain: cfg.chain,
+          },
+        });
+        logger.info(`[Deposit] Created ${cfg.alias} wallet for user ${userId}: ${wallet.address}`);
+      } catch (error) {
+        logger.error(`[Deposit] Failed to create ${cfg.alias} wallet for user ${userId}:`, error);
+      }
+    }
+  }
+
   async createDepositRequest(userId: string, chain: string, token: string = "USDT") {
-    const chainType = CHAIN_MAP[chain.toUpperCase()];
-    if (!chainType) {
+    const mapping = CHAIN_MAP[chain.toUpperCase()];
+    if (!mapping) {
       throw new Error(`Unsupported chain: ${chain}`);
     }
 
-    const userWallet = await prisma.userCryptoWallet.findFirst({
-      where: { userId, chain: chainType },
+    await this.ensureUserWallets(userId);
+
+    const depositWallet = await prisma.depositWallet.findFirst({
+      where: { userId, alias: mapping.alias },
     });
 
-    if (!userWallet) {
-      throw new Error(`No wallet found for ${chain}. Create a crypto wallet first.`);
+    if (!depositWallet) {
+      throw new Error(`No ${mapping.alias} wallet found. Create a wallet first.`);
     }
 
     const depositRequest = await prisma.depositRequest.create({
       data: {
         userId,
+        depositWalletId: depositWallet.id,
         chain: chain.toUpperCase(),
         token,
         status: "WALLET_CREATED",
       },
     });
 
-    await prisma.depositAddress.create({
-      data: {
-        depositRequestId: depositRequest.id,
-        crossmintWalletId: userWallet.crossmintWalletId,
-        address: userWallet.address,
-        chain: chainType,
-        status: "CREATED",
-        expiresAt: new Date(Date.now() + 5 * 60 * 1000),
-      },
+    const now = Date.now();
+    await prisma.depositWallet.update({
+      where: { id: depositWallet.id },
+      data: { expiresAt: new Date(now + 5 * 60 * 1000) },
     });
 
     const internalWallet = await prisma.wallet.findFirst({
@@ -61,12 +96,12 @@ export class DepositService {
       });
     }
 
-    logger.info(`[Deposit] Deposit request ${depositRequest.id} using address ${userWallet.address}`);
+    logger.info(`[Deposit] Deposit request ${depositRequest.id} using wallet ${depositWallet.address}`);
 
     return {
       depositId: depositRequest.id,
       network: chain.toUpperCase(),
-      address: userWallet.address,
+      address: depositWallet.address,
     };
   }
 
@@ -76,24 +111,20 @@ export class DepositService {
     amount: number,
     chain: string
   ) {
-    const depositAddress = await prisma.depositAddress.findFirst({
-      where: { crossmintWalletId, status: { not: "ARCHIVED" } },
-      include: { depositRequest: true },
-      orderBy: { createdAt: "desc" },
+    const depositWallet = await prisma.depositWallet.findFirst({
+      where: { crossmintWalletId },
+      include: { depositRequests: { orderBy: { createdAt: "desc" }, take: 1 } },
     });
 
-    if (!depositAddress) {
+    if (!depositWallet || depositWallet.depositRequests.length === 0) {
       logger.warn(`[Deposit] Unknown deposit wallet: ${crossmintWalletId}`);
       return;
     }
 
-    await prisma.depositAddress.update({
-      where: { id: depositAddress.id },
-      data: { status: "FUNDED" },
-    });
+    const depositRequest = depositWallet.depositRequests[0];
 
     await prisma.depositRequest.update({
-      where: { id: depositAddress.depositRequestId },
+      where: { id: depositRequest.id },
       data: {
         amount,
         txHash,
@@ -101,26 +132,31 @@ export class DepositService {
       },
     });
 
-    logger.info(`[Deposit] Deposit detected for request ${depositAddress.depositRequestId}: ${amount} ${chain} tx=${txHash}`);
+    logger.info(`[Deposit] Deposit detected for request ${depositRequest.id}: ${amount} ${chain} tx=${txHash}`);
 
-    await prisma.walletTransaction.updateMany({
-      where: {
-        walletId: (await prisma.wallet.findFirst({ where: { userId: depositAddress.depositRequest.userId } }))?.id,
-        type: "DEPOSIT",
-        status: "PENDING",
-      },
-      data: { txHash, status: "DETECTED" },
+    const internalWallet = await prisma.wallet.findFirst({
+      where: { userId: depositWallet.userId },
     });
+
+    if (internalWallet) {
+      await prisma.walletTransaction.updateMany({
+        where: {
+          walletId: internalWallet.id,
+          type: "DEPOSIT",
+          status: "PENDING",
+        },
+        data: { txHash, status: "DETECTED" },
+      });
+    }
   }
 
   async approveDeposit(depositRequestId: string) {
     const depositRequest = await prisma.depositRequest.findUnique({
       where: { id: depositRequestId },
-      include: { depositAddress: true },
     });
 
-    if (!depositRequest || !depositRequest.depositAddress) {
-      throw new Error("Deposit request or address not found");
+    if (!depositRequest) {
+      throw new Error("Deposit request not found");
     }
 
     const fee = Number(depositRequest.amount) * 0.01;
@@ -141,11 +177,11 @@ export class DepositService {
   async sweepToHotTreasury(depositRequestId: string) {
     const depositRequest = await prisma.depositRequest.findUnique({
       where: { id: depositRequestId },
-      include: { depositAddress: true },
+      include: { depositWallet: true },
     });
 
-    if (!depositRequest?.depositAddress) {
-      throw new Error("Deposit request or address not found");
+    if (!depositRequest?.depositWallet) {
+      throw new Error("Deposit request or wallet not found");
     }
 
     const hotWallet = await prisma.treasuryWallet.findFirst({
@@ -156,31 +192,22 @@ export class DepositService {
       throw new Error("Hot treasury wallet not configured for this chain");
     }
 
-    const depositAddress = depositRequest.depositAddress;
-    const chainType = CHAIN_MAP[depositRequest.chain.toUpperCase()];
-    if (!chainType) throw new Error(`Unsupported chain: ${depositRequest.chain}`);
+    const depositWallet = depositRequest.depositWallet;
+    const mapping = CHAIN_MAP[depositRequest.chain.toUpperCase()];
+    if (!mapping) throw new Error(`Unsupported chain: ${depositRequest.chain}`);
 
-    const userWallet = await prisma.userCryptoWallet.findFirst({
-      where: { crossmintWalletId: depositAddress.crossmintWalletId },
-    });
-
-    if (!userWallet?.walletLocator) {
-      throw new Error("User crypto wallet locator not found");
+    if (!depositWallet.walletLocator) {
+      throw new Error("Deposit wallet locator not found");
     }
 
     try {
       const result = await crossmintService.sendTransfer(
-        userWallet.walletLocator,
+        depositWallet.walletLocator,
         hotWallet.address,
         depositRequest.token.toLowerCase(),
         depositRequest.amount?.toString() || "0",
-        chainType
+        mapping.chain
       );
-
-      await prisma.depositAddress.update({
-        where: { id: depositAddress.id },
-        data: { status: "SWEPT" },
-      });
 
       await prisma.depositRequest.update({
         where: { id: depositRequestId },
@@ -197,7 +224,7 @@ export class DepositService {
   async creditUserBalance(depositRequestId: string) {
     const depositRequest = await prisma.depositRequest.findUnique({
       where: { id: depositRequestId },
-      include: { depositAddress: true },
+      include: { depositWallet: true },
     });
 
     if (!depositRequest || !depositRequest.netAmount) {
@@ -233,36 +260,20 @@ export class DepositService {
       data: { status: "COMPLETED" },
     });
 
-    if (depositRequest.depositAddress) {
-      await prisma.depositAddress.update({
-        where: { id: depositRequest.depositAddress.id },
-        data: { status: "ARCHIVED" },
+    if (depositRequest.depositWallet) {
+      await prisma.depositWallet.update({
+        where: { id: depositRequest.depositWallet.id },
+        data: { status: "ACTIVE" },
       });
     }
 
     logger.info(`[Deposit] Credited user ${depositRequest.userId} with ${depositRequest.netAmount} for deposit ${depositRequestId}`);
   }
 
-  async getDepositAddress(depositRequestId: string) {
-    const depositAddress = await prisma.depositAddress.findUnique({
-      where: { depositRequestId },
-      include: { depositRequest: true },
-    });
-
-    if (!depositAddress) return null;
-
-    return {
-      depositId: depositAddress.depositRequestId,
-      network: depositAddress.chain.toUpperCase(),
-      address: depositAddress.address,
-      status: depositAddress.status,
-    };
-  }
-
   async getDepositStatus(depositRequestId: string) {
     const depositRequest = await prisma.depositRequest.findUnique({
       where: { id: depositRequestId },
-      include: { depositAddress: true },
+      include: { depositWallet: true },
     });
 
     if (!depositRequest) return null;
@@ -276,9 +287,9 @@ export class DepositService {
       txHash: depositRequest.txHash,
       confirmations: depositRequest.confirmations,
       status: depositRequest.status,
-      address: depositRequest.depositAddress?.address || null,
-      addressStatus: depositRequest.depositAddress?.status || null,
-      expiresAt: depositRequest.depositAddress?.expiresAt?.toISOString() || null,
+      address: depositRequest.depositWallet?.address || null,
+      addressStatus: depositRequest.depositWallet?.status || null,
+      expiresAt: depositRequest.depositWallet?.expiresAt?.toISOString() || null,
       createdAt: depositRequest.createdAt.toISOString(),
     };
   }
@@ -298,6 +309,10 @@ export class DepositService {
     });
 
     logger.info(`[Deposit] Confirmations for ${depositRequestId}: ${next}`);
+
+    if (next >= REQUIRED_CONFIRMATIONS) {
+      await this.approveDeposit(depositRequestId);
+    }
 
     return { confirmations: next };
   }

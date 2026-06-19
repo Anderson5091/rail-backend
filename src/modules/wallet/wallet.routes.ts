@@ -9,35 +9,39 @@ import { logger } from "../../utils/logger";
 
 const router = Router();
 
-async function ensureUserCryptoWallets(userId: string) {
-  const networks = ENV.SUPPORTED_NETWORKS;
-  const chains = ENV.NETWORK_CHAIN;
+async function ensureUserDepositWallets(userId: string) {
+  const evmChain = ENV.NETWORK_CHAIN[ENV.SUPPORTED_NETWORKS.indexOf("BASE")] as ChainType;
+  const solanaChain = ENV.NETWORK_CHAIN[ENV.SUPPORTED_NETWORKS.indexOf("SOLANA")] as ChainType;
 
-  for (let i = 0; i < networks.length; i++) {
-    const existing = await prisma.userCryptoWallet.findUnique({
-      where: { userId_chain: { userId, chain: chains[i] } },
+  const walletConfigs = [
+    { alias: "evm", chain: evmChain || ("base-sepolia" as ChainType) },
+    { alias: "solana", chain: solanaChain || ("solana" as ChainType) },
+  ];
+
+  for (const cfg of walletConfigs) {
+    const existing = await prisma.depositWallet.findUnique({
+      where: { userId_alias: { userId, alias: cfg.alias } },
     });
 
     if (existing) continue;
 
     try {
-      const chain = chains[i] as ChainType;
-      const wallet = await crossmintService.createWallet(chain, "DEPOSIT");
+      const wallet = await crossmintService.createWallet(cfg.chain, "DEPOSIT");
 
-      await prisma.userCryptoWallet.create({
+      await prisma.depositWallet.create({
         data: {
           userId,
-          network: networks[i],
-          chain,
+          alias: cfg.alias,
           crossmintWalletId: wallet.crossmintWalletId,
           walletLocator: wallet.walletLocator,
           address: wallet.address,
+          chain: cfg.chain,
         },
       });
 
-      logger.info(`[Wallet] Created missing ${networks[i]} crypto wallet for user ${userId}`);
+      logger.info(`[Wallet] Created ${cfg.alias} wallet for user ${userId}: ${wallet.address}`);
     } catch (error) {
-      logger.error(`[Wallet] Failed to create ${networks[i]} crypto wallet for user ${userId}:`, error);
+      logger.error(`[Wallet] Failed to create ${cfg.alias} wallet for user ${userId}:`, error);
     }
   }
 }
@@ -53,9 +57,9 @@ router.get("/", authenticate, async (req: AuthRequest, res: Response) => {
     });
   }
 
-  await ensureUserCryptoWallets(req.userId!);
+  await ensureUserDepositWallets(req.userId!);
 
-  const cryptoWallets = await prisma.userCryptoWallet.findMany({
+  const depositWallets = await prisma.depositWallet.findMany({
     where: { userId: req.userId },
   });
 
@@ -83,8 +87,8 @@ router.get("/", authenticate, async (req: AuthRequest, res: Response) => {
     status: wallet.status,
     availableBalance: availableBalance.toFixed(2),
     pendingBalance: "0.00",
-    cryptoWallets: cryptoWallets.map((w: { network: string; chain: string; address: string }) => ({
-      network: w.network,
+    cryptoWallets: depositWallets.map((w: { alias: string; chain: string; address: string }) => ({
+      network: w.alias.toUpperCase(),
       chain: w.chain,
       address: w.address,
     })),
@@ -92,9 +96,9 @@ router.get("/", authenticate, async (req: AuthRequest, res: Response) => {
 });
 
 router.get("/crypto-wallets", authenticate, async (req: AuthRequest, res: Response) => {
-  await ensureUserCryptoWallets(req.userId!);
+  await ensureUserDepositWallets(req.userId!);
 
-  const wallets = await prisma.userCryptoWallet.findMany({
+  const wallets = await prisma.depositWallet.findMany({
     where: { userId: req.userId },
   });
 
