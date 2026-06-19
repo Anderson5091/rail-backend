@@ -29,7 +29,7 @@ router.get("/:id/address", authenticate, async (req: AuthRequest, res: Response)
 router.get("/", authenticate, async (req: AuthRequest, res: Response) => {
   const deposits = await prisma.depositRequest.findMany({
     where: { userId: req.userId },
-    include: { depositWallet: true },
+    include: { depositAddress: true },
     orderBy: { createdAt: "desc" },
     take: 50,
   });

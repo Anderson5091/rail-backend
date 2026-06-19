@@ -259,14 +259,13 @@ model DepositRequest {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  depositWallet DepositWallet?
+  depositAddress DepositAddress?
 }
 
-model DepositWallet {
+model DepositAddress {
   id               String   @id @default(cuid())
   depositRequestId String   @unique
   crossmintWalletId String
-  walletLocator    String
   address          String
   chain            String
   status           String   @default("CREATED")

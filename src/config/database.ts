@@ -10,7 +10,7 @@ const prismaRaw = new PrismaClient({
 
 export interface ExtendedPrismaClient extends PrismaClient {
   depositRequest: any;
-  depositWallet: any;
+  depositAddress: any;
   withdrawal: any;
   userCryptoWallet: any;
   otpCode: any;

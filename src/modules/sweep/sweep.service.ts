@@ -2,26 +2,26 @@ import { prisma } from "../../config/database";
 import { logger } from "../../utils/logger";
 
 export class SweepService {
-  async sweepExpiredDepositWallets() {
-    const expiredWallets = await prisma.depositWallet.findMany({
+  async sweepExpiredDepositAddresses() {
+    const expiredAddresses = await prisma.depositAddress.findMany({
       where: {
         status: "CREATED",
         expiresAt: { lte: new Date() },
       },
     });
 
-    for (const wallet of expiredWallets) {
-      await prisma.depositWallet.update({
-        where: { id: wallet.id },
+    for (const addr of expiredAddresses) {
+      await prisma.depositAddress.update({
+        where: { id: addr.id },
         data: { status: "EXPIRED" },
       });
 
       await prisma.depositRequest.updateMany({
-        where: { id: wallet.depositRequestId, status: "PENDING" },
+        where: { id: addr.depositRequestId, status: "PENDING" },
         data: { status: "EXPIRED" },
       });
 
-      logger.info(`[Sweep] Expired deposit wallet ${wallet.id}`);
+      logger.info(`[Sweep] Expired deposit address ${addr.id}`);
     }
   }
 }
