@@ -44,6 +44,22 @@ export class DepositService {
       },
     });
 
+    const internalWallet = await prisma.wallet.findFirst({
+      where: { userId },
+    });
+
+    if (internalWallet) {
+      await prisma.walletTransaction.create({
+        data: {
+          walletId: internalWallet.id,
+          type: "DEPOSIT",
+          amount: 0,
+          network: chain.toUpperCase(),
+          status: "PENDING",
+        },
+      });
+    }
+
     logger.info(`[Deposit] Deposit request ${depositRequest.id} using address ${userWallet.address}`);
 
     return {
@@ -79,11 +95,21 @@ export class DepositService {
       where: { id: depositAddress.depositRequestId },
       data: {
         amount,
+        txHash,
         status: "DETECTED",
       },
     });
 
-    logger.info(`[Deposit] Deposit detected for request ${depositAddress.depositRequestId}: ${amount} ${chain}`);
+    logger.info(`[Deposit] Deposit detected for request ${depositAddress.depositRequestId}: ${amount} ${chain} tx=${txHash}`);
+
+    await prisma.walletTransaction.updateMany({
+      where: {
+        walletId: (await prisma.wallet.findFirst({ where: { userId: depositAddress.depositRequest.userId } }))?.id,
+        type: "DEPOSIT",
+        status: "PENDING",
+      },
+      data: { txHash, status: "DETECTED" },
+    });
   }
 
   async approveDeposit(depositRequestId: string) {
@@ -187,12 +213,16 @@ export class DepositService {
 
     await ledgerService.credit(wallet.id, Number(depositRequest.netAmount), `deposit_${depositRequestId}`);
 
-    await prisma.walletTransaction.create({
-      data: {
+    await prisma.walletTransaction.updateMany({
+      where: {
         walletId: wallet.id,
         type: "DEPOSIT",
+        status: { in: ["PENDING", "DETECTED"] },
+      },
+      data: {
         amount: depositRequest.netAmount,
         network: depositRequest.chain,
+        txHash: depositRequest.txHash || undefined,
         status: "COMPLETED",
       },
     });

@@ -255,6 +255,7 @@ model DepositRequest {
   amount    Decimal? @db.Decimal(24, 8)
   fee       Decimal? @db.Decimal(24, 8)
   netAmount Decimal? @db.Decimal(24, 8)
+  txHash    String?
   status    String   @default("PENDING")
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
