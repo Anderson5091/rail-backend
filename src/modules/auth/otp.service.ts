@@ -3,6 +3,7 @@ import "dotenv/config";
 import { prisma } from "../../config/database";
 import { logger } from "../../utils/logger";
 import { Resend } from "resend";
+import twilio from "twilio";
 
 function generateOtpCode(): string {
   return Math.floor(100000 + Math.random() * 900000).toString();
@@ -15,11 +16,43 @@ function generateToken(): string {
 const resend = new Resend(process.env.RESEND_API_KEY);
 const from = process.env.EMAIL_FROM || "Quick Send <noreply@quicksend.com.mx>";
 
+const twilioClient =
+  process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN
+    ? twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN)
+    : null;
+
+const twilioFrom = process.env.TWILIO_PHONE_NUMBER || "";
+
+async function sendSms(phone: string, code: string): Promise<boolean> {
+  if (!twilioClient || !twilioFrom) {
+    logger.warn("[OTP] Twilio not configured, skipping SMS");
+    return false;
+  }
+
+  try {
+    await twilioClient.messages.create({
+      body: `Your Quick Send verification code is ${code}. It expires in 5 minutes.`,
+      from: twilioFrom,
+      to: phone,
+    });
+
+    logger.info(`[OTP] SMS sent to ${phone}`);
+    return true;
+  } catch (error: any) {
+    logger.error(`[OTP] SMS failed for ${phone}: ${error.message}`);
+    return false;
+  }
+}
+
 export const otpService = {
   generateToken,
 
   async sendOtp(phone: string, email: string): Promise<string> {
     const code = generateOtpCode();
+
+    if (phone) {
+      await sendSms(phone, code);
+    }
 
     const { error } = await resend.emails.send({
       from,

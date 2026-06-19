@@ -17,12 +17,10 @@ export const ENV = {
   RESEND_API_KEY: process.env.RESEND_API_KEY || "",
   RESEND_FROM: process.env.RESEND_FROM || "Quick Send <noreply@quicksend.com.mx>",
 
-  // Brevo (SMS/Email) Configuration
-  BREVO_API_KEY: process.env.BREVO_API_KEY || "",
-  BREVO_EMAIL_API_KEY: process.env.BREVO_EMAIL_API_KEY || "",
-  BREVO_SMS_SENDER: process.env.BREVO_SMS_SENDER || "AuthOTP",
-  BREVO_EMAIL_FROM: process.env.BREVO_EMAIL_FROM || "auth@quicksend.com",
-  BREVO_EMAIL_NAME: process.env.BREVO_EMAIL_NAME || "Quick Send",
+  // Twilio (SMS) Configuration
+  TWILIO_ACCOUNT_SID: process.env.TWILIO_ACCOUNT_SID || "",
+  TWILIO_AUTH_TOKEN: process.env.TWILIO_AUTH_TOKEN || "",
+  TWILIO_PHONE_NUMBER: process.env.TWILIO_PHONE_NUMBER || "",
 
   // Crossmint Configuration
   CROSSMINT_API_KEY: process.env.CROSSMINT_API_KEY || "",
