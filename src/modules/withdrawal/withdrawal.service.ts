@@ -60,6 +60,7 @@ export class WithdrawalService {
         amount: params.amount,
         network: params.chain.toUpperCase(),
         status: "PENDING",
+        txHash: withdrawal.id,
       },
     });
 
@@ -118,7 +119,6 @@ export class WithdrawalService {
           createdAt: { gte: new Date(Date.now() - 60000) },
         },
         data: {
-          txHash: result.txHash,
           status: "COMPLETED",
         },
       });
