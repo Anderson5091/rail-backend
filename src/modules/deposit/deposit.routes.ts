@@ -18,7 +18,7 @@ router.post("/create", authenticate, async (req: AuthRequest, res: Response) => 
     res.status(201).json(result);
   } catch (error: any) {
     if (error instanceof z.ZodError) {
-      return res.status(400).json({ error: "Validation failed", details: error.errors });
+      return res.status(400).json({ error: "Validation failed", details: error.issues });
     }
     res.status(500).json({ error: error.message || "Internal server error" });
   }
@@ -65,7 +65,7 @@ router.post("/webhook/detect", async (req: Request, res: Response) => {
     res.json({ ok: true });
   } catch (error: any) {
     if (error instanceof z.ZodError) {
-      return res.status(400).json({ error: "Validation failed", details: error.errors });
+      return res.status(400).json({ error: "Validation failed", details: error.issues });
     }
     res.status(500).json({ error: error.message || "Internal server error" });
   }
@@ -82,7 +82,7 @@ router.post("/webhook/confirm", async (req: Request, res: Response) => {
     res.json(result);
   } catch (error: any) {
     if (error instanceof z.ZodError) {
-      return res.status(400).json({ error: "Validation failed", details: error.errors });
+      return res.status(400).json({ error: "Validation failed", details: error.issues });
     }
     res.status(500).json({ error: error.message || "Internal server error" });
   }
