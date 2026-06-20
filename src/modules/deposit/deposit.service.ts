@@ -78,6 +78,7 @@ export class DepositService {
           type: "DEPOSIT",
           amount: 0,
           network: chain.toUpperCase(),
+          txHash: depositRequest.id,
           status: "PENDING",
         },
       });
