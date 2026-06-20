@@ -64,13 +64,18 @@ export class CrossmintWebhookService {
       return;
     }
 
-    await depositService.handleDepositDetected(walletId, txHash, amount, chain);
+    const depositRequestId = await depositService.handleDepositDetected(walletId, txHash, amount, chain);
 
-    await depositService.approveDeposit(walletId);
+    if (!depositRequestId) {
+      logger.warn("[CrossmintWebhook] No deposit request found for wallet:", walletId);
+      return;
+    }
 
-    await depositService.sweepToHotTreasury(walletId);
+    await depositService.approveDeposit(depositRequestId);
 
-    await depositService.creditUserBalance(walletId);
+    await depositService.sweepToHotTreasury(depositRequestId);
+
+    await depositService.creditUserBalance(depositRequestId);
   }
 
   private async handleTransferSent(payload: CrossmintWebhookPayload) {
