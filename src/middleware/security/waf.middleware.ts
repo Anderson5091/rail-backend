@@ -2,7 +2,7 @@ import { Request, Response, NextFunction } from "express";
 import { metricsService } from "../../modules/production/observability/metrics.service";
 import { loggerService } from "../../modules/production/observability/logger.service";
 
-const SQL_INJECTION_PATTERN = /(\b(SELECT|INSERT|UPDATE|DELETE|DROP|UNION|ALTER|CREATE|TRUNCATE|EXEC)\b|'--|'#|1=1)/i;
+const SQL_INJECTION_PATTERN = /(\b(SELECT|INSERT|UPDATE|DELETE|DROP|UNION|ALTER|TRUNCATE|EXEC)\b|'--|'#|1=1)/i;
 const XSS_PATTERN = /(<script|javascript:|onerror=|onload=|alert\(|document\.cookie|<iframe|<embed|<object)/i;
 
 export function wafMiddleware(req: Request, res: Response, next: NextFunction) {
