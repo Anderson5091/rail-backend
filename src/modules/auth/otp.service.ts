@@ -74,16 +74,16 @@ async function sendEmail(to: string, code: string): Promise<boolean> {
 export const otpService = {
   generateToken,
 
-  async sendOtp(phone: string): Promise<string> {
-    const code = generateOtpCode();
+  async sendOtp(phone: string, code?: string): Promise<string> {
+    const otpCode = code || generateOtpCode();
 
     if (phone) {
-      await sendSms(phone, code);
+      await sendSms(phone, otpCode);
     }
 
-    logger.info(`[OTP] === FALLBACK: Use code ${code} to verify ===`);
+    logger.info(`[OTP] === FALLBACK: Use code ${otpCode} to verify ===`);
 
-    return code;
+    return otpCode;
   },
 
   async sendOtpEmailOnly(email: string): Promise<string> {

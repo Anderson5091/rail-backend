@@ -69,7 +69,7 @@ router.post("/register", async (req: Request, res: Response) => {
 
   const password = await bcrypt.hash(data.password, 12);
 
-  const { token } = await otpService.storeRegistration({
+  const { token, code } = await otpService.storeRegistration({
     email: data.email,
     phone: data.phone || "",
     fullName: data.fullName || "",
@@ -77,8 +77,7 @@ router.post("/register", async (req: Request, res: Response) => {
   });
 
   const phone = data.phone || "";
-  const sentCode = await otpService.sendOtp(phone);
-  await otpService.storeOtpCode(token, sentCode);
+  await otpService.sendOtp(phone, code);
 
   const maskPhone = (p: string) => p.length > 4 ? p.slice(0, 3) + "****" + p.slice(-2) : p;
 
