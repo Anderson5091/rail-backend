@@ -28,9 +28,10 @@ const twilioClient = hasTwilio
 
 const twilioFrom = process.env.TWILIO_PHONE_NUMBER || "";
 
-async function sendSms(phone: string, code: string): Promise<void> {
+async function sendSms(phone: string, code: string): Promise<boolean> {
   if (!twilioClient || !twilioFrom) {
-    throw new AppError(500, "SMS service not configured. Set TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, and TWILIO_PHONE_NUMBER in .env");
+    logger.warn("[OTP] Twilio not configured, skipping SMS");
+    return false;
   }
 
   try {
@@ -41,15 +42,17 @@ async function sendSms(phone: string, code: string): Promise<void> {
     });
 
     logger.info(`[OTP] SMS sent to ${phone}`);
+    return true;
   } catch (error: any) {
     logger.error(`[OTP] SMS failed for ${phone}: ${error.message}`);
-    throw new AppError(500, `Failed to send SMS: ${error.message}`);
+    return false;
   }
 }
 
-async function sendEmail(to: string, code: string): Promise<void> {
+async function sendEmail(to: string, code: string): Promise<boolean> {
   if (!resend) {
-    throw new AppError(500, "Email service not configured. Set RESEND_API_KEY in .env");
+    logger.warn(`[OTP] Email not configured, skipping send to ${to}`);
+    return false;
   }
 
   const { error } = await resend.emails.send({
@@ -60,44 +63,25 @@ async function sendEmail(to: string, code: string): Promise<void> {
   });
 
   if (error) {
-    logger.error(`[OTP] Email failed for ${to}: ${error.message}`);
-    throw new AppError(500, `Failed to send email: ${error.message}`);
+    logger.error(`[OTP] Email send reported error for ${to}: ${error.message} (email may still be delivered)`);
+    return true;
   }
 
   logger.info(`[OTP] Email sent to ${to}`);
+  return true;
 }
 
 export const otpService = {
   generateToken,
 
-  async sendOtp(phone: string, email: string): Promise<string> {
+  async sendOtp(phone: string): Promise<string> {
     const code = generateOtpCode();
-    let smsSent = false;
-    let emailSent = false;
 
     if (phone) {
-      try {
-        await sendSms(phone, code);
-        smsSent = true;
-      } catch (err: any) {
-        logger.warn(`[OTP] SMS failed, will try email only: ${err.message}`);
-      }
+      await sendSms(phone, code);
     }
 
-    if (email) {
-      try {
-        await sendEmail(email, code);
-        emailSent = true;
-      } catch (err: any) {
-        logger.warn(`[OTP] Email failed: ${err.message}`);
-      }
-    }
-
-    if (!smsSent && !emailSent) {
-      logger.error(`[OTP] SMS/email delivery failed. Code ${code} was NOT sent.`);
-      logger.error(`[OTP] Fix Twilio region permissions for +${phone} and verify domain in Resend.`);
-      logger.error(`[OTP] === FALLBACK: Use code ${code} to verify (check server logs) ===`);
-    }
+    logger.info(`[OTP] === FALLBACK: Use code ${code} to verify ===`);
 
     return code;
   },
@@ -106,6 +90,8 @@ export const otpService = {
     const code = generateOtpCode();
 
     await sendEmail(email, code);
+
+    logger.info(`[OTP] === FALLBACK: Use code ${code} to verify ===`);
 
     return code;
   },

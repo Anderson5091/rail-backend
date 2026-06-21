@@ -77,7 +77,7 @@ router.post("/register", async (req: Request, res: Response) => {
   });
 
   const phone = data.phone || "";
-  const sentCode = await otpService.sendOtp(phone, data.email);
+  const sentCode = await otpService.sendOtp(phone);
   await otpService.storeOtpCode(token, sentCode);
 
   const maskPhone = (p: string) => p.length > 4 ? p.slice(0, 3) + "****" + p.slice(-2) : p;
@@ -102,8 +102,8 @@ router.post("/send-otp", async (req: Request, res: Response) => {
     throw new AppError(400, "No pending registration found for this token");
   }
 
-  const { phone, email } = pending.data as any;
-  const smsCode = await otpService.sendOtp(phone, email);
+  const { phone } = pending.data as any;
+  const smsCode = await otpService.sendOtp(phone);
   await otpService.storeOtpCode(token, smsCode);
 
   res.json({ message: "OTP sent via SMS" });
