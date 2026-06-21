@@ -14,17 +14,17 @@ function generateToken(): string {
   return crypto.randomUUID();
 }
 
-const resend =
-  process.env.RESEND_API_KEY
-    ? new Resend(process.env.RESEND_API_KEY)
-    : null;
+const hasResend = !!process.env.RESEND_API_KEY;
+const hasTwilio = !!(process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN && process.env.TWILIO_PHONE_NUMBER);
 
+logger.info(`[OTP] Config check — Resend: ${hasResend ? "yes" : "no"}, Twilio: ${hasTwilio ? "yes" : "no"}`);
+
+const resend = hasResend ? new Resend(process.env.RESEND_API_KEY) : null;
 const from = process.env.EMAIL_FROM || "Quick Send <noreply@quicksend.com.mx>";
 
-const twilioClient =
-  process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN
-    ? twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN)
-    : null;
+const twilioClient = hasTwilio
+  ? twilio(process.env.TWILIO_ACCOUNT_SID!, process.env.TWILIO_AUTH_TOKEN!)
+  : null;
 
 const twilioFrom = process.env.TWILIO_PHONE_NUMBER || "";
 
@@ -94,6 +94,8 @@ export const otpService = {
     }
 
     if (!smsSent && !emailSent) {
+      logger.error(`[OTP] Both SMS and email failed. Code ${code} was NOT delivered to phone:${phone} email:${email}`);
+      logger.error(`[OTP] Check Railway logs above for Twilio/Resend error details`);
       throw new AppError(500, "Unable to send verification code. Please check your contact info or try again later.");
     }
 
