@@ -183,7 +183,6 @@ router.post("/internal-transfer", authenticate, async (req: AuthRequest, res: Re
       type: "TRANSFER",
       amount: data.amount,
       status: "COMPLETED",
-      referenceId,
     },
   });
 
@@ -193,7 +192,6 @@ router.post("/internal-transfer", authenticate, async (req: AuthRequest, res: Re
       type: "TRANSFER",
       amount: data.amount,
       status: "COMPLETED",
-      referenceId,
     },
   });
 
