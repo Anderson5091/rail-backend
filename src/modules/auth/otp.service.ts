@@ -44,7 +44,7 @@ async function sendSms(phone: string, code: string): Promise<boolean> {
     logger.info(`[OTP] SMS sent to ${phone}`);
     return true;
   } catch (error: any) {
-    logger.error(`[OTP] SMS failed for ${phone}: ${error.message}`);
+    logger.error(`[OTP] SMS failed for ${phone}: code=${error.code} status=${error.status} message=${error.message}`);
     return false;
   }
 }
