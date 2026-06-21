@@ -148,47 +148,54 @@ const internalTransferSchema = z.object({
 });
 
 router.post("/internal-transfer", authenticate, async (req: AuthRequest, res: Response) => {
-  const data = internalTransferSchema.parse(req.body);
+  try {
+    const data = internalTransferSchema.parse(req.body);
 
-  const recipient = await prisma.user.findUnique({ where: { email: data.recipientEmail } });
-  if (!recipient) throw new AppError(404, "Recipient not found");
+    const recipient = await prisma.user.findUnique({ where: { email: data.recipientEmail } });
+    if (!recipient) throw new AppError(404, "Recipient not found");
+    if (recipient.id === req.userId) throw new AppError(400, "Cannot transfer to yourself");
 
-  const senderWallet = await prisma.wallet.findFirst({ where: { userId: req.userId } });
-  if (!senderWallet) throw new AppError(404, "Sender wallet not found");
+    const senderWallet = await prisma.wallet.findFirst({ where: { userId: req.userId } });
+    if (!senderWallet) throw new AppError(404, "Sender wallet not found");
 
-  const recipientWallet = await prisma.wallet.findFirst({ where: { userId: recipient.id } });
-  if (!recipientWallet) throw new AppError(404, "Recipient wallet not found");
+    const recipientWallet = await prisma.wallet.findFirst({ where: { userId: recipient.id } });
+    if (!recipientWallet) throw new AppError(404, "Recipient wallet not found");
 
-  const balance = await ledgerService.getBalance(senderWallet.id);
-  if (Number(balance) < data.amount) throw new AppError(400, "Insufficient balance");
+    const balance = await ledgerService.getBalance(senderWallet.id);
+    if (Number(balance) < data.amount) throw new AppError(400, "Insufficient balance");
 
-  const referenceId = `P2P-${Date.now()}-${req.userId}`;
+    const referenceId = `P2P-${Date.now()}-${req.userId}`;
 
-  await ledgerService.debit(senderWallet.id, data.amount, referenceId);
-  await ledgerService.credit(recipientWallet.id, data.amount, referenceId);
+    await ledgerService.debit(senderWallet.id, data.amount, referenceId);
+    await ledgerService.credit(recipientWallet.id, data.amount, referenceId);
 
-  await prisma.walletTransaction.create({
-    data: {
-      walletId: senderWallet.id,
-      type: "TRANSFER",
-      amount: data.amount,
-      status: "COMPLETED",
-      referenceId,
-    },
-  });
+    await prisma.walletTransaction.create({
+      data: {
+        walletId: senderWallet.id,
+        type: "TRANSFER",
+        amount: data.amount,
+        status: "COMPLETED",
+        referenceId,
+      },
+    });
 
-  await prisma.walletTransaction.create({
-    data: {
-      walletId: recipientWallet.id,
-      type: "TRANSFER",
-      amount: data.amount,
-      status: "COMPLETED",
-      referenceId,
-    },
-  });
+    await prisma.walletTransaction.create({
+      data: {
+        walletId: recipientWallet.id,
+        type: "TRANSFER",
+        amount: data.amount,
+        status: "COMPLETED",
+        referenceId,
+      },
+    });
 
-  logger.info(`[P2P] ${req.userId} sent ${data.amount} USDT to ${data.recipientEmail}`);
-  res.json({ message: "Transfer completed", referenceId });
+    logger.info(`[P2P] ${req.userId} sent ${data.amount} USDT to ${data.recipientEmail}`);
+    res.json({ message: "Transfer completed", referenceId });
+  } catch (err: any) {
+    if (err instanceof AppError || err instanceof z.ZodError) throw err;
+    logger.error(`[P2P] Internal error: ${err.message}`, err);
+    throw new AppError(500, "Transfer failed. Please try again.");
+  }
 });
 
 export { router as walletRoutes };
