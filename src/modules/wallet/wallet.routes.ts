@@ -3,8 +3,10 @@ import { Router, Response } from "express";
 import { prisma } from "../../config/database";
 import { ENV } from "../../config/env";
 import { authenticate, AuthRequest } from "../../middleware/auth";
+import { AppError } from "../../middleware/errorHandler";
 import { crossmintService, type ChainType } from "../../services/crossmint.service";
 import { depositService } from "../deposit/deposit.service";
+import { ledgerService } from "../ledger/ledger.service";
 import { logger } from "../../utils/logger";
 
 const router = Router();
@@ -138,6 +140,55 @@ router.post("/create-deposit", authenticate, async (req: AuthRequest, res: Respo
   const data = createDepositSchema.parse(req.body);
   const result = await depositService.createDepositRequest(req.userId!, data.chain, data.token);
   res.status(201).json(result);
+});
+
+const internalTransferSchema = z.object({
+  recipientEmail: z.string().email(),
+  amount: z.number().positive(),
+});
+
+router.post("/internal-transfer", authenticate, async (req: AuthRequest, res: Response) => {
+  const data = internalTransferSchema.parse(req.body);
+
+  const recipient = await prisma.user.findUnique({ where: { email: data.recipientEmail } });
+  if (!recipient) throw new AppError(404, "Recipient not found");
+
+  const senderWallet = await prisma.wallet.findFirst({ where: { userId: req.userId } });
+  if (!senderWallet) throw new AppError(404, "Sender wallet not found");
+
+  const recipientWallet = await prisma.wallet.findFirst({ where: { userId: recipient.id } });
+  if (!recipientWallet) throw new AppError(404, "Recipient wallet not found");
+
+  const balance = await ledgerService.getBalance(senderWallet.id);
+  if (Number(balance) < data.amount) throw new AppError(400, "Insufficient balance");
+
+  const referenceId = `P2P-${Date.now()}-${req.userId}`;
+
+  await ledgerService.debit(senderWallet.id, data.amount, referenceId);
+  await ledgerService.credit(recipientWallet.id, data.amount, referenceId);
+
+  await prisma.walletTransaction.create({
+    data: {
+      walletId: senderWallet.id,
+      type: "TRANSFER",
+      amount: data.amount,
+      status: "COMPLETED",
+      referenceId,
+    },
+  });
+
+  await prisma.walletTransaction.create({
+    data: {
+      walletId: recipientWallet.id,
+      type: "TRANSFER",
+      amount: data.amount,
+      status: "COMPLETED",
+      referenceId,
+    },
+  });
+
+  logger.info(`[P2P] ${req.userId} sent ${data.amount} USDT to ${data.recipientEmail}`);
+  res.json({ message: "Transfer completed", referenceId });
 });
 
 export { router as walletRoutes };
