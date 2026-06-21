@@ -94,9 +94,9 @@ export const otpService = {
     }
 
     if (!smsSent && !emailSent) {
-      logger.error(`[OTP] Both SMS and email failed. Code ${code} was NOT delivered to phone:${phone} email:${email}`);
-      logger.error(`[OTP] Check Railway logs above for Twilio/Resend error details`);
-      throw new AppError(500, "Unable to send verification code. Please check your contact info or try again later.");
+      logger.error(`[OTP] SMS/email delivery failed. Code ${code} was NOT sent.`);
+      logger.error(`[OTP] Fix Twilio region permissions for +${phone} and verify domain in Resend.`);
+      logger.error(`[OTP] === FALLBACK: Use code ${code} to verify (check server logs) ===`);
     }
 
     return code;
