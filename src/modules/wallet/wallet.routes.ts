@@ -168,9 +168,19 @@ router.post("/internal-transfer", authenticate, async (req: AuthRequest, res: Re
   const finalRecipientWallet = await prisma.wallet.findFirst({ where: { userId: recipient.id } });
   if (!finalRecipientWallet) throw new AppError(500, "Failed to create recipient wallet");
 
-  const balance = await ledgerService.getBalance(senderWallet.id);
-  logger.info(`[P2P] Balance check: sender=${senderWallet.id} balance=${balance} amount=${data.amount}`);
-  if (Number(balance) < data.amount) throw new AppError(400, "Insufficient balance");
+  const credits = await prisma.ledgerEntry.aggregate({
+    where: { walletId: senderWallet.id, type: "CREDIT" },
+    _sum: { amount: true },
+  });
+
+  const debits = await prisma.ledgerEntry.aggregate({
+    where: { walletId: senderWallet.id, type: "DEBIT" },
+    _sum: { amount: true },
+  });
+
+  const balance = Number(credits._sum.amount || 0) - Number(debits._sum.amount || 0);
+  logger.info(`[P2P] Balance: credits=${credits._sum.amount} debits=${debits._sum.amount} balance=${balance} amount=${data.amount}`);
+  if (balance < data.amount) throw new AppError(400, `Insufficient balance (${balance.toFixed(2)} USDT available, ${data.amount} USDT needed)`);
 
   const referenceId = `P2P-${Date.now()}-${req.userId}`;
 
