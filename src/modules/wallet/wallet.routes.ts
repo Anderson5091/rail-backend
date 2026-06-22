@@ -65,11 +65,6 @@ router.get("/", authenticate, async (req: AuthRequest, res: Response) => {
     where: { userId: req.userId },
   });
 
-  const balance = await prisma.ledgerEntry.aggregate({
-    where: { walletId: wallet.id },
-    _sum: { amount: true },
-  });
-
   const credits = await prisma.ledgerEntry.aggregate({
     where: { walletId: wallet.id, type: "CREDIT" },
     _sum: { amount: true },
@@ -82,13 +77,22 @@ router.get("/", authenticate, async (req: AuthRequest, res: Response) => {
 
   const availableBalance = Number(credits._sum.amount || 0) - Number(debits._sum.amount || 0);
 
+  const pendingOut = await prisma.walletTransaction.aggregate({
+    where: {
+      walletId: wallet.id,
+      type: { in: ["TRANSFER", "WITHDRAWAL"] },
+      status: { not: "COMPLETED" },
+    },
+    _sum: { amount: true },
+  });
+
   res.json({
     id: wallet.id,
     userId: wallet.userId,
     currency: wallet.currency,
     status: wallet.status,
     availableBalance: availableBalance.toFixed(2),
-    pendingBalance: "0.00",
+    pendingBalance: Number(pendingOut._sum.amount || 0).toFixed(2),
     cryptoWallets: depositWallets.map((w: { alias: string; chain: string; address: string }) => ({
       network: w.alias.toUpperCase(),
       chain: w.chain,
@@ -136,12 +140,15 @@ router.get("/transactions", authenticate, async (req: AuthRequest, res: Response
 
 const internalTransferSchema = z.object({
   recipientEmail: z.string().email(),
-  amount: z.string().refine((v) => !isNaN(parseFloat(v)) && parseFloat(v) > 0, "Amount must be a positive number"),
+  amount: z.union([z.string(), z.number()]).refine(
+    (v) => !isNaN(Number(v)) && Number(v) > 0,
+    "Amount must be a positive number"
+  ),
 });
 
 router.post("/internal-transfer", authenticate, async (req: AuthRequest, res: Response) => {
   const { recipientEmail, amount } = internalTransferSchema.parse(req.body);
-  const amountNum = parseFloat(amount);
+  const amountNum = Number(amount);
 
   if (req.userId === undefined) return res.status(401).json({ error: "Unauthorized" });
 

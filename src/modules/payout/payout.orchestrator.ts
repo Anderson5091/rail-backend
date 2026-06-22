@@ -3,6 +3,7 @@ import { partnerRouterService } from "../partners/router/partner-router.service"
 import { getAdapter } from "../partners/adapters/index";
 import { partnerRepository } from "../partners/registry/partner.repository";
 import { slaMonitorService } from "../partners/sla/sla-monitor.service";
+import { ledgerService } from "../ledger/ledger.service";
 import { logger } from "../../utils/logger";
 
 export class PayoutOrchestrator {
@@ -91,6 +92,28 @@ export class PayoutOrchestrator {
           payload: { error: String(error) },
         },
       });
+
+      // Auto-revert: credit funds back to the user's wallet
+      try {
+        const transferRecord = await prisma.transfer.findUnique({ where: { id: transfer.id } });
+        if (transferRecord) {
+          const wallet = await prisma.wallet.findFirst({ where: { userId: transferRecord.userId } });
+          if (wallet) {
+            await ledgerService.credit(wallet.id, Number(transferRecord.amount), `refund_payout_failed_${transfer.id}`);
+
+            await prisma.walletTransaction.updateMany({
+              where: { payoutOrderId: order.id, walletId: wallet.id },
+              data: { status: "FAILED" },
+            });
+          }
+          await prisma.transfer.update({
+            where: { id: transfer.id },
+            data: { status: "FAILED" },
+          });
+        }
+      } catch (revertErr) {
+        logger.error(`[PAYOUT] Failed to revert funds for transfer ${transfer.id}:`, revertErr);
+      }
 
       return { ...order, status: "FAILED", partner: "ROUTING_FAILED" };
     }

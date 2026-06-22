@@ -2,6 +2,7 @@ import { Router, Response } from "express";
 import bcrypt from "bcryptjs";
 import { prisma } from "../../config/database";
 import { authenticate, AuthRequest, requireRole } from "../../middleware/auth";
+import { ledgerService } from "../ledger/ledger.service";
 
 const router = Router();
 
@@ -190,6 +191,50 @@ router.post("/payouts/:id/retry", authenticate, requireRole("SUPER_ADMIN", "OPS"
   });
 
   res.json({ status: "RETRY_QUEUED" });
+});
+
+router.post("/payouts/:id/revert", authenticate, requireRole("SUPER_ADMIN", "OPS"), async (req: AuthRequest, res: Response) => {
+  const payout = await prisma.payoutOrder.findUnique({ where: { id: req.params.id } });
+  if (!payout) return res.status(404).json({ error: "Payout not found" });
+  if (payout.status !== "FAILED") return res.status(400).json({ error: "Only failed payouts can be reverted" });
+
+  const transfer = await prisma.transfer.findUnique({ where: { id: payout.transferId } });
+  if (!transfer) return res.status(404).json({ error: "Transfer not found" });
+  if (transfer.status === "COMPLETED") return res.status(400).json({ error: "Transfer already completed" });
+
+  const wallet = await prisma.wallet.findFirst({ where: { userId: transfer.userId } });
+  if (!wallet) return res.status(400).json({ error: "Wallet not found" });
+
+  await ledgerService.credit(wallet.id, Number(transfer.amount), `admin_refund_${payout.id}`);
+
+  await prisma.transfer.update({
+    where: { id: transfer.id },
+    data: { status: "FAILED" },
+  });
+
+  await prisma.walletTransaction.updateMany({
+    where: { payoutOrderId: payout.id, walletId: wallet.id },
+    data: { status: "FAILED" },
+  });
+
+  await prisma.payoutEvent.create({
+    data: {
+      payoutOrderId: payout.id,
+      eventType: "ADMIN_REVERT",
+      payload: { adminId: req.userId },
+    },
+  });
+
+  await prisma.adminActionLog.create({
+    data: {
+      adminId: req.userId,
+      action: "REVERT_PAYOUT",
+      entity: "Payout",
+      entityId: payout.id,
+    },
+  });
+
+  res.json({ success: true, message: "Funds reverted to user wallet" });
 });
 
 router.get("/notifications", authenticate, requireRole("SUPER_ADMIN", "COMPLIANCE", "TREASURY", "OPS"), async (_req: AuthRequest, res: Response) => {
