@@ -1,4 +1,3 @@
-import crypto from "crypto";
 import "dotenv/config";
 import { prisma } from "../../config/database";
 import { logger } from "../../utils/logger";
@@ -10,28 +9,23 @@ function generateOtpCode(): string {
   return Math.floor(100000 + Math.random() * 900000).toString();
 }
 
-function generateToken(): string {
-  return crypto.randomUUID();
-}
+const resend =
+  process.env.RESEND_API_KEY
+    ? new Resend(process.env.RESEND_API_KEY)
+    : null;
 
-const hasResend = !!process.env.RESEND_API_KEY;
-const hasTwilio = !!(process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN && process.env.TWILIO_PHONE_NUMBER);
-
-logger.info(`[OTP] Config check — Resend: ${hasResend ? "yes" : "no"}, Twilio: ${hasTwilio ? "yes" : "no"}`);
-
-const resend = hasResend ? new Resend(process.env.RESEND_API_KEY) : null;
 const from = process.env.EMAIL_FROM || "Quick Send <noreply@quicksend.com.mx>";
 
-const twilioClient = hasTwilio
-  ? twilio(process.env.TWILIO_ACCOUNT_SID!, process.env.TWILIO_AUTH_TOKEN!)
-  : null;
+const twilioClient =
+  process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN
+    ? twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN)
+    : null;
 
 const twilioFrom = process.env.TWILIO_PHONE_NUMBER || "";
 
-async function sendSms(phone: string, code: string): Promise<boolean> {
+async function sendSms(phone: string, code: string): Promise<void> {
   if (!twilioClient || !twilioFrom) {
-    logger.warn("[OTP] Twilio not configured, skipping SMS");
-    return false;
+    throw new AppError(500, "SMS service not configured. Set TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, and TWILIO_PHONE_NUMBER in .env");
   }
 
   try {
@@ -42,17 +36,15 @@ async function sendSms(phone: string, code: string): Promise<boolean> {
     });
 
     logger.info(`[OTP] SMS sent to ${phone}`);
-    return true;
   } catch (error: any) {
-    logger.error(`[OTP] SMS failed for ${phone}: code=${error.code} status=${error.status} message=${error.message}`);
-    return false;
+    logger.error(`[OTP] SMS failed for ${phone}: ${error.message}`);
+    throw new AppError(500, `Failed to send SMS: ${error.message}`);
   }
 }
 
-async function sendEmail(to: string, code: string): Promise<boolean> {
+async function sendEmail(to: string, code: string): Promise<void> {
   if (!resend) {
-    logger.warn(`[OTP] Email not configured, skipping send to ${to}`);
-    return false;
+    throw new AppError(500, "Email service not configured. Set RESEND_API_KEY in .env");
   }
 
   const { error } = await resend.emails.send({
@@ -63,68 +55,82 @@ async function sendEmail(to: string, code: string): Promise<boolean> {
   });
 
   if (error) {
-    logger.error(`[OTP] Email send reported error for ${to}: ${error.message} (email may still be delivered)`);
-    return true;
+    logger.error(`[OTP] Email failed for ${to}: ${error.message}`);
+    throw new AppError(500, `Failed to send email: ${error.message}`);
   }
 
   logger.info(`[OTP] Email sent to ${to}`);
-  return true;
 }
 
 export const otpService = {
-  generateToken,
+  async sendOtp(userId: string, phone: string, email?: string): Promise<string> {
+    const code = generateOtpCode();
+    const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
 
-  async sendOtp(phone: string, code?: string): Promise<string> {
-    const otpCode = code || generateOtpCode();
+    await prisma.otpCode.create({
+      data: { userId, code, type: "PHONE_VERIFICATION", expiresAt },
+    });
+
+    let smsSent = false;
+    let emailSent = false;
 
     if (phone) {
-      await sendSms(phone, otpCode);
+      try {
+        await sendSms(phone, code);
+        smsSent = true;
+      } catch (err: any) {
+        logger.warn(`[OTP] SMS failed, will try email only: ${err.message}`);
+      }
     }
 
-    logger.info(`[OTP] === FALLBACK: Use code ${otpCode} to verify ===`);
+    if (email) {
+      try {
+        await sendEmail(email, code);
+        emailSent = true;
+      } catch (err: any) {
+        logger.warn(`[OTP] Email failed: ${err.message}`);
+      }
+    }
 
-    return otpCode;
-  },
-
-  async sendOtpEmailOnly(email: string): Promise<string> {
-    const code = generateOtpCode();
-
-    await sendEmail(email, code);
-
-    logger.info(`[OTP] === FALLBACK: Use code ${code} to verify ===`);
+    if (!smsSent && !emailSent) {
+      throw new AppError(500, "Unable to send verification code. Please check your contact info or try again later.");
+    }
 
     return code;
   },
 
-  async storeRegistration(data: {
-    email: string;
-    phone: string;
-    fullName: string;
-    password: string;
-  }): Promise<{ token: string; code: string }> {
-    const token = generateToken();
+  async sendOtpEmailOnly(userId: string, email: string): Promise<string> {
+    const existing = await prisma.otpCode.findFirst({
+      where: {
+        userId,
+        type: "PHONE_VERIFICATION",
+        verified: false,
+        expiresAt: { gte: new Date(Date.now() + 2 * 60 * 1000) },
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
+    if (existing) {
+      await sendEmail(email, existing.code);
+      return existing.code;
+    }
+
     const code = generateOtpCode();
     const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
 
     await prisma.otpCode.create({
-      data: { token, code, type: "PHONE_VERIFICATION", expiresAt, data },
+      data: { userId, code, type: "PHONE_VERIFICATION", expiresAt },
     });
 
-    return { token, code };
+    await sendEmail(email, code);
+
+    return code;
   },
 
-  async storeOtpCode(token: string, code: string): Promise<void> {
-    const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
-
-    await prisma.otpCode.create({
-      data: { token, code, type: "PHONE_VERIFICATION", expiresAt },
-    });
-  },
-
-  async verifyOtp(token: string, code: string): Promise<any | null> {
+  async verifyOtp(userId: string, code: string): Promise<boolean> {
     const otp = await prisma.otpCode.findFirst({
       where: {
-        token,
+        userId,
         code,
         type: "PHONE_VERIFICATION",
         verified: false,
@@ -133,13 +139,18 @@ export const otpService = {
       orderBy: { createdAt: "desc" },
     });
 
-    if (!otp) return null;
+    if (!otp) return false;
 
     await prisma.otpCode.update({
       where: { id: otp.id },
       data: { verified: true },
     });
 
-    return otp.data;
+    await prisma.user.update({
+      where: { id: userId },
+      data: { phoneVerified: true },
+    });
+
+    return true;
   },
 };

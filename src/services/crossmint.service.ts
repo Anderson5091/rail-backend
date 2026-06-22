@@ -4,7 +4,7 @@ import { ENV } from "../config/env";
 import { logger } from "../utils/logger";
 
 export type ChainType = Chain;
-export type WalletType = "HOT" | "WARM" | "COLD" | "DEPOSIT";
+export type WalletType = "COLLECTION" | "HOT" | "WARM" | "COLD" | "DEPOSIT";
 
 export interface CrossmintWalletResult {
   crossmintWalletId: string;
@@ -45,7 +45,15 @@ class CrossmintService {
   ): Promise<CrossmintWalletResult> {
     await this.ensureInitialized();
 
-    const recoverySecret = ENV.WALLET_RECOVERY_SECRET;
+    const recoverySecret =
+      type === "DEPOSIT"
+        ? ENV.WALLET_RECOVERY_SECRET || ENV.DEPOSIT_SIGNER_SECRET
+        : ENV.TREASURY_RECOVERY_SECRET;
+
+    const signerSecret =
+      type === "DEPOSIT"
+        ? ENV.WALLET_SIGNER_SECRET || ENV.DEPOSIT_SIGNER_SECRET
+        : ENV.TREASURY_SIGNER_SECRET;
 
     try {
       const params: any = {
@@ -54,6 +62,9 @@ class CrossmintService {
           type: "server",
           secret: recoverySecret,
         },
+        signers: [
+          { type: "server", secret: signerSecret },
+        ],
       };
 
       if (userId) {

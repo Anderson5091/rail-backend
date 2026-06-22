@@ -15,7 +15,7 @@ export const ENV = {
 
   // Resend (Email) Configuration
   RESEND_API_KEY: process.env.RESEND_API_KEY || "",
-  RESEND_FROM: process.env.RESEND_FROM || "Quick Send <noreply@quicksend.com.mx>",
+  EMAIL_FROM: process.env.EMAIL_FROM || "Quick Send <noreply@quicksend.com.mx>",
 
   // Twilio (SMS) Configuration
   TWILIO_ACCOUNT_SID: process.env.TWILIO_ACCOUNT_SID || "",
@@ -25,7 +25,7 @@ export const ENV = {
   // Crossmint Configuration
   CROSSMINT_API_KEY: process.env.CROSSMINT_API_KEY || "",
   CROSSMINT_BASE_URL: process.env.CROSSMINT_BASE_URL || "",
-
+  DEPOSIT_SIGNER_SECRET: process.env.DEPOSIT_SIGNER_SECRET || "",
   TREASURY_SIGNER_SECRET: process.env.TREASURY_SIGNER_SECRET || "",
   TREASURY_RECOVERY_SECRET: process.env.TREASURY_RECOVERY_SECRET || "",
   WALLET_SIGNER_SECRET: process.env.WALLET_SIGNER_SECRET || "",

@@ -1,12 +1,7 @@
 import { PrismaClient } from "@prisma/client";
-import { PrismaPg } from "@prisma/adapter-pg";
-import { loadEnvFile } from "process";
 import bcrypt from "bcryptjs";
 
-loadEnvFile(".env");
-
-const adapter = new PrismaPg(process.env.DATABASE_URL || "");
-const prisma = new PrismaClient({ adapter });
+const prisma = new PrismaClient();
 
 const ADMINS = [
   { email: "admin@quicksend.com", password: "admin123", role: "SUPER_ADMIN" },
@@ -15,55 +10,36 @@ const ADMINS = [
   { email: "treasury@quicksend.com", password: "treasury123", role: "TREASURY" },
 ];
 
+const AGENTS = [
+  {
+    email: "partner@quicksend.com",
+    password: "partner123",
+    fullName: "John Partner",
+    type: "PARTNER",
+    wallets: [
+      { walletType: "BASE_TREASURY", balance: 100000 },
+      { walletType: "COMMISSION", balance: 5000 },
+    ],
+  },
+  {
+    email: "internal@quicksend.com",
+    password: "internal123",
+    fullName: "Jane Internal",
+    type: "INTERNAL",
+    wallets: [
+      { walletType: "COMMISSION", balance: 2500 },
+    ],
+  },
+];
+
 async function main() {
-  console.log("Clearing all data...");
-
-  // Delete in FK-safe order
-  await prisma.notificationDelivery.deleteMany();
-  await prisma.notification.deleteMany();
-  await prisma.eventLog.deleteMany();
-  await prisma.event.deleteMany();
-  await prisma.idempotencyKey.deleteMany();
-  await prisma.partnerSlaMetric.deleteMany();
-  await prisma.partnerWebhook.deleteMany();
-  await prisma.partnerTransaction.deleteMany();
-  await prisma.partner.deleteMany();
-  await prisma.riskScore.deleteMany();
-  await prisma.complianceCase.deleteMany();
-  await prisma.sanctionsHit.deleteMany();
-  await prisma.amlCheck.deleteMany();
-  await prisma.kycDocument.deleteMany();
-  await prisma.kycProfile.deleteMany();
-  await prisma.withdrawal.deleteMany();
-  await prisma.depositWallet.deleteMany();
-  await prisma.depositRequest.deleteMany();
-  await prisma.ledgerEntry.deleteMany();
-  await prisma.walletTransaction.deleteMany();
-  await prisma.walletAddress.deleteMany();
-  await prisma.wallet.deleteMany();
-  await prisma.otpCode.deleteMany();
-  await prisma.payoutEvent.deleteMany();
-  await prisma.partnerLog.deleteMany();
-  await prisma.payoutOrder.deleteMany();
-  await prisma.transfer.deleteMany();
-  await prisma.beneficiary.deleteMany();
-  await prisma.fxRate.deleteMany();
-  await prisma.feeRule.deleteMany();
-  await prisma.treasuryMovement.deleteMany();
-  await prisma.treasuryWallet.deleteMany();
-  await prisma.liquiditySnapshot.deleteMany();
-  await prisma.agentKpi.deleteMany();
-  await prisma.agentTransaction.deleteMany();
-  await prisma.agentWallet.deleteMany();
-  await prisma.agent.deleteMany();
-  await prisma.adminActionLog.deleteMany();
-  await prisma.adminUser.deleteMany();
-  await prisma.user.deleteMany();
-
-  console.log("All data cleared.");
-
-  // Seed admins
   for (const admin of ADMINS) {
+    const existing = await prisma.adminUser.findUnique({ where: { email: admin.email } });
+    if (existing) {
+      console.log(`Admin ${admin.email} already exists — skipping`);
+      continue;
+    }
+
     const passwordHash = await bcrypt.hash(admin.password, 12);
     await prisma.adminUser.create({
       data: {
@@ -73,23 +49,42 @@ async function main() {
         status: "ACTIVE",
       },
     });
-    console.log(`Created admin ${admin.email} (${admin.role})`);
+    console.log(`Created admin ${admin.email} with role ${admin.role}`);
   }
 
-  // Seed user
-  const passwordHash = await bcrypt.hash("12345678", 12);
-  await prisma.user.create({
-    data: {
-      email: "anderson5091@gmail.com",
-      phone: "+50934552439",
-      phoneVerified: true,
-      password: passwordHash,
-      fullName: "Anderson Nazaire",
-    },
-  });
-  console.log("Created user: Anderson Nazaire (anderson5091@gmail.com)");
+  for (const agentData of AGENTS) {
+    const existing = await prisma.agent.findUnique({ where: { email: agentData.email } });
+    if (existing) {
+      console.log(`Agent ${agentData.email} already exists — skipping`);
+      continue;
+    }
 
-  console.log("Seed complete.");
+    const passwordHash = await bcrypt.hash(agentData.password, 12);
+    const agent = await prisma.agent.create({
+      data: {
+        email: agentData.email,
+        passwordHash,
+        fullName: agentData.fullName,
+        type: agentData.type,
+        status: "ACTIVE",
+      },
+    });
+
+    for (const wallet of agentData.wallets) {
+      await prisma.agentWallet.create({
+        data: {
+          agentId: agent.id,
+          walletType: wallet.walletType,
+          network: "BASE",
+          chain: "base",
+          address: `seed_${agentData.type}_${wallet.walletType}_${agent.id}`,
+          balance: wallet.balance,
+        },
+      });
+    }
+
+    console.log(`Created agent ${agentData.email} (${agentData.type}) with wallet(s)`);
+  }
 }
 
 main()

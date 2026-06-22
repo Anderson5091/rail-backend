@@ -47,16 +47,6 @@ export class TransferOrchestrator {
         data: { payoutOrderId: payoutOrder.id },
       });
 
-      await prisma.walletTransaction.create({
-        data: {
-          walletId: wallet.id,
-          type: "TRANSFER",
-          amount: data.amount,
-          status: "COMPLETED",
-          referenceId,
-        },
-      });
-
       await eventEmitter.emit("TRANSFER_CREATED", {
         eventType: "TRANSFER_CREATED",
         entity: "Transfer",

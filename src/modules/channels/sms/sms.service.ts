@@ -1,13 +1,40 @@
+import twilio from "twilio";
+import { prisma } from "../../../config/database";
 import { logger } from "../../../utils/logger";
 import type { NotificationResult } from "../../notifications/notification.types";
 
+const twilioClient =
+  process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN
+    ? twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN)
+    : null;
+
+const twilioFrom = process.env.TWILIO_PHONE_NUMBER || "";
+
 class SmsService {
   async send(notification: NotificationResult): Promise<void> {
-    logger.info(`[SMS] To: ${notification.userId}, Message: ${notification.message}`);
+    if (!notification.userId) {
+      logger.warn("[SMS] No userId, skipping");
+      return;
+    }
 
-    // In production, integrate with Twilio, Vonage, or similar:
-    // await twilioClient.messages.create({ to: phone, from: FROM, body: message });
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    if (!twilioClient || !twilioFrom) {
+      logger.warn("[SMS] Twilio not configured, skipping");
+      return;
+    }
+
+    const user = await prisma.user.findUnique({ where: { id: notification.userId } });
+    if (!user?.phone) {
+      logger.warn(`[SMS] No phone for user ${notification.userId}, skipping`);
+      return;
+    }
+
+    await twilioClient.messages.create({
+      body: notification.message || notification.title || "",
+      from: twilioFrom,
+      to: user.phone,
+    });
+
+    logger.info(`[SMS] Sent to ${user.phone} for user ${notification.userId}`);
   }
 }
 

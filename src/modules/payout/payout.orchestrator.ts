@@ -7,14 +7,20 @@ import { logger } from "../../utils/logger";
 
 export class PayoutOrchestrator {
   async execute(transfer: { id: string; payoutMethod: string; amount: number; [key: string]: unknown }) {
-    const order = await prisma.payoutOrder.create({
-      data: {
-        transferId: transfer.id,
-        payoutMethod: transfer.payoutMethod,
-        status: "PENDING",
-        partner: "",
-      },
+    let order = await prisma.payoutOrder.findUnique({
+      where: { transferId: transfer.id },
     });
+
+    if (!order) {
+      order = await prisma.payoutOrder.create({
+        data: {
+          transferId: transfer.id,
+          payoutMethod: transfer.payoutMethod,
+          status: "PENDING",
+          partner: "",
+        },
+      });
+    }
 
     try {
       const routing = await partnerRouterService.route({

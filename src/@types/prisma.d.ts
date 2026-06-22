@@ -3,8 +3,6 @@ declare module "@prisma/client" {
     constructor(options?: any);
     $connect(): Promise<void>;
     $disconnect(): Promise<void>;
-    $transaction: any;
-    $on: any;
     user: any;
     wallet: any;
     walletAddress: any;

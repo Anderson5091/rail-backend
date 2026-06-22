@@ -124,7 +124,6 @@ function extractBalance(balances: unknown, token: string): number {
   // Fall back to named property (e.g. balances.usdc / balances.usdxm / balances.nativeToken)
   const entry = (balances as Record<string, unknown>)[token];
   if (!entry) {
-    // Also try nativeToken as fallback for native chain tokens
     if (token === "native") {
       const native = (balances as Record<string, unknown>).nativeToken;
       if (native && typeof native === "object") {
