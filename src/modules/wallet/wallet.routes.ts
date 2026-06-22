@@ -5,6 +5,8 @@ import { ENV } from "../../config/env";
 import { authenticate, AuthRequest } from "../../middleware/auth";
 import { crossmintService, type ChainType } from "../../services/crossmint.service";
 import { depositService } from "../deposit/deposit.service";
+import { ledgerService } from "../ledger/ledger.service";
+import { lockService } from "../../services/lock.service";
 import { logger } from "../../utils/logger";
 
 const router = Router();
@@ -130,6 +132,60 @@ router.get("/transactions", authenticate, async (req: AuthRequest, res: Response
     ...tx,
     amount: Number(tx.amount),
   })));
+});
+
+const internalTransferSchema = z.object({
+  recipientEmail: z.string().email(),
+  amount: z.string().refine((v) => !isNaN(parseFloat(v)) && parseFloat(v) > 0, "Amount must be a positive number"),
+});
+
+router.post("/internal-transfer", authenticate, async (req: AuthRequest, res: Response) => {
+  const { recipientEmail, amount } = internalTransferSchema.parse(req.body);
+  const amountNum = parseFloat(amount);
+
+  if (req.userId === undefined) return res.status(401).json({ error: "Unauthorized" });
+
+  const senderWallet = await prisma.wallet.findFirst({ where: { userId: req.userId } });
+  if (!senderWallet) return res.status(400).json({ error: "Sender wallet not found" });
+
+  const recipient = await prisma.user.findUnique({
+    where: { email: recipientEmail },
+    select: { id: true },
+  });
+  if (!recipient) return res.status(404).json({ error: "Recipient not found" });
+  if (recipient.id === req.userId) return res.status(400).json({ error: "Cannot transfer to yourself" });
+
+  const recipientWallet = await prisma.wallet.findFirst({ where: { userId: recipient.id } });
+  if (!recipientWallet) return res.status(400).json({ error: "Recipient wallet not found" });
+
+  const result = await lockService.withLock(`wallet:${senderWallet.id}`, async () => {
+    const balance = await ledgerService.getBalance(senderWallet.id);
+    if (balance < amountNum) throw new Error("Insufficient balance");
+
+    await ledgerService.debit(senderWallet.id, amountNum, `internal_to_${recipient.id}`);
+    await ledgerService.credit(recipientWallet.id, amountNum, `internal_from_${req.userId}`);
+
+    await prisma.walletTransaction.createMany({
+      data: [
+        {
+          walletId: senderWallet.id,
+          type: "TRANSFER",
+          amount: amountNum,
+          status: "COMPLETED",
+        },
+        {
+          walletId: recipientWallet.id,
+          type: "TRANSFER",
+          amount: amountNum,
+          status: "COMPLETED",
+        },
+      ],
+    });
+
+    return { success: true };
+  });
+
+  res.json(result);
 });
 
 const createDepositSchema = z.object({
