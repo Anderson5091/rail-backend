@@ -75,11 +75,10 @@ export class AgentService {
         data: { balance: { decrement: usdtAmount } },
       });
 
-      const commWallet = (agent.wallets as AgentWalletRow[]).find((w) => w.walletType === "COMMISSION");
-      if (commWallet && commission > 0) {
-        await prisma.agentWallet.update({
-          where: { id: commWallet.id },
-          data: { balance: { increment: commission } },
+      if (commission > 0) {
+        await prisma.agent.update({
+          where: { id: agentId },
+          data: { commissionLedger: { increment: commission } },
         });
       }
     } else {
@@ -96,11 +95,10 @@ export class AgentService {
         data: { balance: { decrement: usdtAmount } },
       });
 
-      const commWallet = (agent.wallets as AgentWalletRow[]).find((w) => w.walletType === "COMMISSION");
-      if (commWallet && commission > 0) {
-        await prisma.agentWallet.update({
-          where: { id: commWallet.id },
-          data: { balance: { increment: commission } },
+      if (commission > 0) {
+        await prisma.agent.update({
+          where: { id: agentId },
+          data: { commissionLedger: { increment: commission } },
         });
       }
     }
@@ -154,11 +152,10 @@ export class AgentService {
 
     await ledgerService.debit(userWallet.id, amount, `agent_withdraw_${agentId}_${Date.now()}`);
 
-    const commWallet = (agent.wallets as AgentWalletRow[]).find((w) => w.walletType === "COMMISSION");
-    if (commWallet && commission > 0) {
-      await prisma.agentWallet.update({
-        where: { id: commWallet.id },
-        data: { balance: { increment: commission } },
+    if (commission > 0) {
+      await prisma.agent.update({
+        where: { id: agentId },
+        data: { commissionLedger: { increment: commission } },
       });
     }
 
@@ -206,11 +203,10 @@ export class AgentService {
 
     await ledgerService.debit(userWallet.id, amount, `agent_payment_${agentId}_${Date.now()}`);
 
-    const commWallet = (agent.wallets as AgentWalletRow[]).find((w) => w.walletType === "COMMISSION");
-    if (commWallet) {
-      await prisma.agentWallet.update({
-        where: { id: commWallet.id },
-        data: { balance: { increment: commission } },
+    if (commission > 0) {
+      await prisma.agent.update({
+        where: { id: agentId },
+        data: { commissionLedger: { increment: commission } },
       });
     }
 
@@ -294,6 +290,50 @@ export class AgentService {
     return tx;
   }
 
+  async withdrawCommission(agentId: string) {
+    const agent = await prisma.agent.findUnique({
+      where: { id: agentId },
+      include: { wallets: true },
+    });
+    if (!agent) throw new Error("Agent not found");
+
+    const ledgerBalance = Number(agent.commissionLedger);
+    if (ledgerBalance < 10) {
+      throw new Error("Commission balance must be at least $10 to withdraw");
+    }
+
+    const commWallet = (agent.wallets as AgentWalletRow[]).find((w) => w.walletType === "COMMISSION");
+    if (!commWallet) throw new Error("Commission wallet not found");
+
+    const withdrawAmount = ledgerBalance;
+
+    await prisma.agent.update({
+      where: { id: agentId },
+      data: { commissionLedger: { decrement: withdrawAmount } },
+    });
+
+    await prisma.agentWallet.update({
+      where: { id: commWallet.id },
+      data: { balance: { increment: withdrawAmount } },
+    });
+
+    const tx = await prisma.agentTransaction.create({
+      data: {
+        agentId,
+        type: "COMMISSION",
+        amount: withdrawAmount,
+        commission: 0,
+        netAmount: withdrawAmount,
+        status: "COMPLETED",
+        reference: `comm_wd_${agentId}_${Date.now()}`,
+        metadata: { fromLedger: true },
+      },
+    });
+
+    logger.info(`[Agent] Agent ${agentId} withdrew ${withdrawAmount} USDT from commission ledger to wallet`);
+    return tx;
+  }
+
   async getAgentKpi(agentId: string, period?: string) {
     const where: { agentId: string; period?: string } = { agentId };
     if (period) where.period = period;
@@ -345,6 +385,7 @@ export class AgentService {
       status: agent.status,
       kpiRating: agent.kpiRating,
       totalRewards: Number(agent.totalRewards),
+      commissionLedgerBalance: Number(agent.commissionLedger),
       baseTreasuryBalance: baseWallet ? Number(baseWallet.balance) : null,
       commissionBalance: commWallet ? Number(commWallet.balance) : null,
       todayVolume: todayTx.reduce((sum: number, t: AgentTransactionRow) => sum + Number(t.amount), 0),

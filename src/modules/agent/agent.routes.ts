@@ -99,7 +99,7 @@ router.get("/list", authenticate, requireRole("SUPER_ADMIN", "OPS", "TREASURY"),
   });
 
   res.json(
-    agents.map((a: { id: string; email: string; fullName: string | null; type: string; status: string; kpiRating: number | null; totalRewards: { toString: () => string }; _count: { transactions: number }; wallets: { walletType: string; balance: { toString: () => string } }[]; createdAt: Date }) => ({
+    agents.map((a: { id: string; email: string; fullName: string | null; type: string; status: string; kpiRating: number | null; totalRewards: { toString: () => string }; commissionLedger: { toString: () => string }; _count: { transactions: number }; wallets: { walletType: string; balance: { toString: () => string } }[]; createdAt: Date }) => ({
       id: a.id,
       email: a.email,
       fullName: a.fullName,
@@ -110,6 +110,7 @@ router.get("/list", authenticate, requireRole("SUPER_ADMIN", "OPS", "TREASURY"),
       totalTransactions: a._count.transactions,
       baseTreasuryBalance: Number(a.wallets.find((w: { walletType: string }) => w.walletType === "BASE_TREASURY")?.balance ?? 0),
       commissionBalance: Number(a.wallets.find((w: { walletType: string }) => w.walletType === "COMMISSION")?.balance ?? 0),
+      commissionLedgerBalance: Number(a.commissionLedger),
       createdAt: a.createdAt,
     }))
   );
@@ -204,6 +205,16 @@ router.post("/topup-partner", authenticate, requireRole("AGENT_INTERNAL"), async
     usdtAmount
   );
   res.json(result);
+});
+
+router.post("/:id/withdraw-commission", authenticate, requireRole("AGENT_PARTNER", "AGENT_INTERNAL"), async (req: AuthRequest, res: Response) => {
+  try {
+    const result = await agentService.withdrawCommission(String(req.params.id));
+    res.json(result);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "Failed to withdraw commission";
+    res.status(400).json({ error: message });
+  }
 });
 
 router.get("/:id/kpi", authenticate, async (req: AuthRequest, res: Response) => {

@@ -57,6 +57,7 @@ router.get("/me", authenticate, async (req: AuthRequest, res: Response) => {
     status: agent.status,
     kpiRating: agent.kpiRating,
     totalRewards: Number(agent.totalRewards),
+    commissionLedgerBalance: Number(agent.commissionLedger),
     wallets: agent.wallets.map((w: { id: string; walletType: string; network: string; address: string; balance: { toString: () => string } }) => ({
       id: w.id,
       walletType: w.walletType,
