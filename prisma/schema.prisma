@@ -67,15 +67,16 @@ model WalletAddress {
 }
 
 model WalletTransaction {
-  id        String   @id @default(cuid())
-  walletId  String
-  type      String
-  amount    Decimal  @db.Decimal(24, 8)
-  network   String?
-  txHash    String?
-  status    String   @default("PENDING")
-  createdAt DateTime @default(now())
-  wallet    Wallet   @relation(fields: [walletId], references: [id])
+  id                String   @id @default(cuid())
+  walletId          String
+  type              String
+  amount            Decimal  @db.Decimal(24, 8)
+  network           String?
+  txHash            String?
+  status            String   @default("PENDING")
+  transactionNumber String?
+  createdAt         DateTime @default(now())
+  wallet            Wallet   @relation(fields: [walletId], references: [id])
 }
 
 model LedgerEntry {

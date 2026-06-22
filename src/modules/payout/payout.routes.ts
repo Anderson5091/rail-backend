@@ -39,7 +39,7 @@ router.post("/:id/retry", authenticate, async (req: AuthRequest, res: Response) 
     return res.status(400).json({ error: "Max retries reached" });
   }
 
-  const updated = await prisma.payoutOrder.update({
+  await prisma.payoutOrder.update({
     where: { id: req.params.id },
     data: {
       status: "QUEUED",
@@ -47,7 +47,13 @@ router.post("/:id/retry", authenticate, async (req: AuthRequest, res: Response) 
     },
   });
 
-  res.json(updated);
+  const transfer = await prisma.transfer.findUnique({
+    where: { id: order.transferId },
+  });
+  if (!transfer) return res.status(404).json({ error: "Transfer not found" });
+
+  const result = await orchestrator.execute(transfer);
+  res.json(result);
 });
 
 export { router as payoutRoutes };

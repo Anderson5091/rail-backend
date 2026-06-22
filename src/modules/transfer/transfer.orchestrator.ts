@@ -2,6 +2,16 @@ import { prisma } from "../../config/database";
 import { lockService } from "../../services/lock.service";
 import { ledgerService } from "../ledger/ledger.service";
 import { eventEmitter } from "../events/event.emitter";
+import { PayoutOrchestrator } from "../payout/payout.orchestrator";
+import { logger } from "../../utils/logger";
+import crypto from "crypto";
+
+const payoutOrchestrator = new PayoutOrchestrator();
+
+function generateTransactionNumber(): string {
+  const digits = crypto.randomInt(1000000000, 9999999999).toString();
+  return `MTCN-${digits}`;
+}
 
 export class TransferOrchestrator {
   async createTransfer(data: { beneficiaryId: string; amount: number; payoutMethod: string }, userId: string) {
@@ -13,7 +23,7 @@ export class TransferOrchestrator {
     const wallet = await prisma.wallet.findFirst({ where: { userId } });
     if (!wallet) throw new Error("Wallet not found");
 
-    const referenceId = `QS-${Date.now()}`;
+    const transactionNumber = generateTransactionNumber();
 
     const transfer = await lockService.withLock(`wallet:${wallet.id}`, async () => {
       const balance = await ledgerService.getBalance(wallet.id);
@@ -21,7 +31,7 @@ export class TransferOrchestrator {
         throw new Error("Insufficient balance");
       }
 
-      await ledgerService.debit(wallet.id, data.amount, referenceId);
+      await ledgerService.debit(wallet.id, data.amount, transactionNumber);
 
       const t = await prisma.transfer.create({
         data: {
@@ -30,7 +40,7 @@ export class TransferOrchestrator {
           amount: data.amount,
           payoutMethod: data.payoutMethod,
           status: "PENDING_PAYOUT",
-          referenceId,
+          referenceId: transactionNumber,
         },
       });
 
@@ -47,15 +57,29 @@ export class TransferOrchestrator {
         data: { payoutOrderId: payoutOrder.id },
       });
 
+      await prisma.walletTransaction.create({
+        data: {
+          walletId: wallet.id,
+          type: "TRANSFER",
+          amount: data.amount,
+          status: "PENDING",
+          transactionNumber,
+        },
+      });
+
       await eventEmitter.emit("TRANSFER_CREATED", {
         eventType: "TRANSFER_CREATED",
         entity: "Transfer",
         entityId: t.id,
         userId,
-        metadata: { amount: data.amount, payoutMethod: data.payoutMethod, referenceId },
+        metadata: { amount: data.amount, payoutMethod: data.payoutMethod, transactionNumber },
       });
 
-      return { ...t, payoutOrderId: payoutOrder.id };
+      payoutOrchestrator.execute({ ...t, payoutOrderId: payoutOrder.id, beneficiaryId: data.beneficiaryId }).catch((err) => {
+        logger.error(`[TRANSFER] Auto-payout failed for transfer ${t.id}: ${err.message}`);
+      });
+
+      return { ...t, payoutOrderId: payoutOrder.id, transactionNumber };
     });
 
     return transfer;

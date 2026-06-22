@@ -6,7 +6,7 @@ import { slaMonitorService } from "../partners/sla/sla-monitor.service";
 import { logger } from "../../utils/logger";
 
 export class PayoutOrchestrator {
-  async execute(transfer: { id: string; payoutMethod: string; amount: number; [key: string]: unknown }) {
+  async execute(transfer: { id: string; payoutMethod: string; amount: number; beneficiaryId?: string; [key: string]: unknown }) {
     let order = await prisma.payoutOrder.findUnique({
       where: { transferId: transfer.id },
     });
@@ -22,6 +22,10 @@ export class PayoutOrchestrator {
       });
     }
 
+    const beneficiary = transfer.beneficiaryId
+      ? await prisma.beneficiary.findUnique({ where: { id: transfer.beneficiaryId } })
+      : null;
+
     try {
       const routing = await partnerRouterService.route({
         payoutMethod: transfer.payoutMethod,
@@ -34,11 +38,12 @@ export class PayoutOrchestrator {
       const response = await adapter.sendPayout({
         amount: transfer.amount,
         reference: transfer.id,
-        beneficiaryName: transfer.beneficiaryName as string,
-        bankName: transfer.bankName as string,
-        accountNumber: transfer.accountNumber as string,
-        phoneNumber: transfer.phoneNumber as string,
-        provider: transfer.provider as string,
+        beneficiaryName: beneficiary?.fullName,
+        bankName: beneficiary?.bankName,
+        accountNumber: beneficiary?.accountNumber,
+        phoneNumber: beneficiary?.mobileWalletNumber,
+        provider: beneficiary?.mobileProvider,
+        location: beneficiary?.cashPickupLocation,
       });
 
       const elapsed = Date.now() - start;
@@ -58,7 +63,7 @@ export class PayoutOrchestrator {
         data: {
           partner: routing.partner.name,
           externalReference: response.externalReference,
-          status: response.status === "SUCCESS" ? "SENT_TO_PARTNER" : response.status === "READY_FOR_PICKUP" ? "SENT_TO_PARTNER" : "PENDING",
+          status: response.status === "SUCCESS" || response.status === "READY_FOR_PICKUP" ? "SENT_TO_PARTNER" : "PENDING",
         },
       });
 

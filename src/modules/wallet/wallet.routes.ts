@@ -126,7 +126,10 @@ router.get("/transactions", authenticate, async (req: AuthRequest, res: Response
     take: 50,
   });
 
-  res.json(transactions);
+  res.json(transactions.map((tx: typeof transactions[0]) => ({
+    ...tx,
+    amount: Number(tx.amount),
+  })));
 });
 
 const createDepositSchema = z.object({
