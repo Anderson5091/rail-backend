@@ -57,10 +57,26 @@ router.get("/me", authenticate, async (req: AuthRequest, res: Response) => {
     where: { id: req.userId },
     select: { id: true, email: true, role: true, status: true, createdAt: true },
   });
-  if (!admin) throw new AppError(404, "Admin not found");
-  if (admin.status !== "ACTIVE") throw new AppError(403, "Account is inactive");
+  if (admin) {
+    if (admin.status !== "ACTIVE") throw new AppError(403, "Account is inactive");
+    return res.json(admin);
+  }
 
-  res.json(admin);
+  const agent = await prisma.agent.findUnique({
+    where: { id: req.userId },
+    select: { id: true, email: true, type: true, status: true, fullName: true, kpiRating: true, totalRewards: true, commissionLedger: true, createdAt: true },
+  });
+  if (!agent) throw new AppError(404, "Account not found");
+  if (agent.status !== "ACTIVE") throw new AppError(403, "Account is inactive");
+
+  const agentRole = agent.type === "PARTNER" ? "AGENT_PARTNER" : "AGENT_INTERNAL";
+  res.json({
+    id: agent.id,
+    email: agent.email,
+    role: agentRole,
+    status: agent.status,
+    createdAt: agent.createdAt,
+  });
 });
 
 router.post("/register", authenticate, requireRole("SUPER_ADMIN"), async (req: AuthRequest, res: Response) => {
