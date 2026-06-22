@@ -178,8 +178,27 @@ router.post("/verify-otp", async (req: Request, res: Response) => {
 router.post("/login", async (req: Request, res: Response) => {
   const data = loginSchema.parse(req.body);
 
-  const user = await prisma.user.findUnique({ where: { email: data.email } });
-  if (!user) throw new AppError(401, "Invalid credentials");
+  let user = await prisma.user.findUnique({ where: { email: data.email } });
+  let userType = "USER";
+
+  if (!user) {
+    const agent = await prisma.agent.findUnique({ where: { email: data.email } });
+    if (!agent) throw new AppError(401, "Invalid credentials");
+
+    const valid = await bcrypt.compare(data.password, agent.passwordHash);
+    if (!valid) throw new AppError(401, "Invalid credentials");
+
+    if (agent.status !== "ACTIVE") throw new AppError(403, "Account is inactive");
+
+    const jwt = generateToken(agent.id, agent.type === "PARTNER" ? "AGENT_PARTNER" : "AGENT_INTERNAL");
+    const refreshToken = generateRefreshToken(agent.id);
+
+    return res.json({
+      user: { id: agent.id, email: agent.email, fullName: agent.fullName, type: "AGENT", agentType: agent.type },
+      token: jwt,
+      refreshToken,
+    });
+  }
 
   const valid = await bcrypt.compare(data.password, user.password);
   if (!valid) throw new AppError(401, "Invalid credentials");
