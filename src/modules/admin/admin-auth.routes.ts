@@ -18,18 +18,35 @@ router.post("/login", authLimiter, async (req: AuthRequest, res: Response) => {
   const data = loginSchema.parse(req.body);
 
   const admin = await prisma.adminUser.findUnique({ where: { email: data.email } });
-  if (!admin) throw new AppError(401, "Invalid credentials");
+  if (admin) {
+    if (admin.status !== "ACTIVE") throw new AppError(403, "Account is inactive");
 
-  if (admin.status !== "ACTIVE") throw new AppError(403, "Account is inactive");
+    const valid = await bcrypt.compare(data.password, admin.passwordHash);
+    if (!valid) throw new AppError(401, "Invalid credentials");
 
-  const valid = await bcrypt.compare(data.password, admin.passwordHash);
+    const token = generateToken(admin.id, admin.role);
+    const refreshToken = generateToken(admin.id, admin.role);
+
+    return res.json({
+      user: { id: admin.id, email: admin.email, role: admin.role, status: admin.status, createdAt: admin.createdAt },
+      token,
+      refreshToken,
+    });
+  }
+
+  const agent = await prisma.agent.findUnique({ where: { email: data.email } });
+  if (!agent) throw new AppError(401, "Invalid credentials");
+  if (agent.status !== "ACTIVE") throw new AppError(403, "Account is inactive");
+
+  const valid = await bcrypt.compare(data.password, agent.passwordHash);
   if (!valid) throw new AppError(401, "Invalid credentials");
 
-  const token = generateToken(admin.id, admin.role);
-  const refreshToken = generateToken(admin.id, admin.role);
+  const agentRole = agent.type === "PARTNER" ? "AGENT_PARTNER" : "AGENT_INTERNAL";
+  const token = generateToken(agent.id, agentRole);
+  const refreshToken = generateToken(agent.id, agentRole);
 
   res.json({
-    user: { id: admin.id, email: admin.email, role: admin.role },
+    user: { id: agent.id, email: agent.email, role: agentRole, status: agent.status, createdAt: agent.createdAt },
     token,
     refreshToken,
   });
