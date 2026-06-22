@@ -482,9 +482,10 @@ model Agent {
   status       String   @default("ACTIVE")
   createdBy    String?
   kpiRating    Float?
-  totalRewards Decimal  @default(0) @db.Decimal(24, 8)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  totalRewards     Decimal  @default(0) @db.Decimal(24, 8)
+  commissionLedger Decimal  @default(0) @db.Decimal(24, 8)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 
   wallets      AgentWallet[]
   transactions AgentTransaction[]
