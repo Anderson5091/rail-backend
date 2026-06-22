@@ -2,11 +2,7 @@ import { prisma } from "../../config/database";
 import { lockService } from "../../services/lock.service";
 import { ledgerService } from "../ledger/ledger.service";
 import { eventEmitter } from "../events/event.emitter";
-import { PayoutOrchestrator } from "../payout/payout.orchestrator";
-import { logger } from "../../utils/logger";
 import crypto from "crypto";
-
-const payoutOrchestrator = new PayoutOrchestrator();
 
 function generateTransactionNumber(): string {
   const digits = crypto.randomInt(1000000000, 9999999999).toString();
@@ -39,22 +35,9 @@ export class TransferOrchestrator {
           beneficiaryId: data.beneficiaryId,
           amount: data.amount,
           payoutMethod: data.payoutMethod,
-          status: "PENDING_PAYOUT",
+          status: "COMPLETED",
           referenceId: transactionNumber,
         },
-      });
-
-      const payoutOrder = await prisma.payoutOrder.create({
-        data: {
-          transferId: t.id,
-          payoutMethod: data.payoutMethod,
-          status: "PENDING",
-        },
-      });
-
-      await prisma.transfer.update({
-        where: { id: t.id },
-        data: { payoutOrderId: payoutOrder.id },
       });
 
       await prisma.walletTransaction.create({
@@ -62,9 +45,8 @@ export class TransferOrchestrator {
           walletId: wallet.id,
           type: "TRANSFER",
           amount: data.amount,
-          status: "PENDING",
+          status: "COMPLETED",
           transactionNumber,
-          payoutOrderId: payoutOrder.id,
         },
       });
 
@@ -76,11 +58,7 @@ export class TransferOrchestrator {
         metadata: { amount: data.amount, payoutMethod: data.payoutMethod, transactionNumber },
       });
 
-      payoutOrchestrator.execute({ ...t, payoutOrderId: payoutOrder.id, beneficiaryId: data.beneficiaryId }).catch((err) => {
-        logger.error(`[TRANSFER] Auto-payout failed for transfer ${t.id}: ${err.message}`);
-      });
-
-      return { ...t, payoutOrderId: payoutOrder.id, transactionNumber };
+      return { ...t, transactionNumber };
     });
 
     return transfer;
