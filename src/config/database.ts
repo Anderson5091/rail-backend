@@ -13,6 +13,10 @@ export interface ExtendedPrismaClient extends PrismaClient {
   depositWallet: any;
   withdrawal: any;
   otpCode: any;
+  agent: any;
+  agentWallet: any;
+  agentTransaction: any;
+  agentKpi: any;
 }
 
 export const prisma = prismaRaw as ExtendedPrismaClient;

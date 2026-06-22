@@ -472,6 +472,77 @@ model AdminUser {
   createdAt    DateTime @default(now())
 }
 
+model Agent {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  phone        String?
+  fullName     String?
+  passwordHash String
+  type         String   @default("PARTNER")
+  status       String   @default("ACTIVE")
+  createdBy    String?
+  kpiRating    Float?
+  totalRewards Decimal  @default(0) @db.Decimal(24, 8)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  wallets      AgentWallet[]
+  transactions AgentTransaction[]
+  kpiEntries   AgentKpi[]
+}
+
+model AgentWallet {
+  id                String   @id @default(cuid())
+  agentId           String
+  walletType        String
+  network           String   @default("BASE")
+  chain             String   @default("base")
+  address           String   @unique
+  crossmintWalletId String?
+  walletLocator     String?
+  balance           Decimal  @default(0) @db.Decimal(24, 8)
+  status            String   @default("ACTIVE")
+  lastSync          DateTime @default(now())
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  agent Agent @relation(fields: [agentId], references: [id])
+}
+
+model AgentTransaction {
+  id          String   @id @default(cuid())
+  agentId     String
+  type        String
+  amount      Decimal  @db.Decimal(24, 8)
+  commission  Decimal  @default(0) @db.Decimal(24, 8)
+  netAmount   Decimal  @db.Decimal(24, 8)
+  userRef     String?
+  status      String   @default("COMPLETED")
+  reference   String?  @unique
+  metadata    Json?
+  createdAt   DateTime @default(now())
+
+  agent Agent @relation(fields: [agentId], references: [id])
+}
+
+model AgentKpi {
+  id              String   @id @default(cuid())
+  agentId         String
+  period          String
+  periodStart     DateTime
+  periodEnd       DateTime
+  totalVolume     Decimal  @default(0) @db.Decimal(24, 8)
+  totalCommission Decimal  @default(0) @db.Decimal(24, 8)
+  totalTxCount    Int      @default(0)
+  rewardPoints    Decimal  @default(0) @db.Decimal(24, 8)
+  rating          Float?
+  createdAt       DateTime @default(now())
+
+  agent Agent @relation(fields: [agentId], references: [id])
+
+  @@unique([agentId, period, periodStart])
+}
+
 model AdminActionLog {
   id        String   @id @default(cuid())
   adminId   String?
