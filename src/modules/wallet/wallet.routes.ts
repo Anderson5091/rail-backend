@@ -1,3 +1,4 @@
+import { randomBytes } from "crypto";
 import { z } from "zod";
 import { Router, Response } from "express";
 import { prisma } from "../../config/database";
@@ -6,7 +7,7 @@ import { authenticate, AuthRequest } from "../../middleware/auth";
 import { AppError } from "../../middleware/errorHandler";
 import { crossmintService, type ChainType } from "../../services/crossmint.service";
 import { depositService } from "../deposit/deposit.service";
-import { ledgerService } from "../ledger/ledger.service";
+import { lockService } from "../../services/lock.service";
 import { logger } from "../../utils/logger";
 
 const router = Router();
@@ -160,53 +161,73 @@ router.post("/internal-transfer", authenticate, async (req: AuthRequest, res: Re
   const senderWallet = await prisma.wallet.findFirst({ where: { userId: req.userId } });
   if (!senderWallet) throw new AppError(404, "Sender wallet not found");
 
-  const recipientWallet = await prisma.wallet.findFirst({ where: { userId: recipient.id } });
-  if (!recipientWallet) {
-    await prisma.wallet.create({ data: { userId: recipient.id } });
+  let finalRecipientWallet = await prisma.wallet.findFirst({ where: { userId: recipient.id } });
+  if (!finalRecipientWallet) {
+    finalRecipientWallet = await prisma.wallet.create({ data: { userId: recipient.id } });
   }
 
-  const finalRecipientWallet = await prisma.wallet.findFirst({ where: { userId: recipient.id } });
-  if (!finalRecipientWallet) throw new AppError(500, "Failed to create recipient wallet");
+  const referenceId = `P2P-${randomBytes(8).toString("hex")}`;
 
-  const credits = await prisma.ledgerEntry.aggregate({
-    where: { walletId: senderWallet.id, type: "CREDIT" },
-    _sum: { amount: true },
-  });
+  const result = await lockService.withLock(`wallet:${senderWallet.id}`, async () => {
+    return await (prisma as any).$transaction(async (tx: any) => {
+      const credits = await tx.ledgerEntry.aggregate({
+        where: { walletId: senderWallet.id, type: "CREDIT" },
+        _sum: { amount: true },
+      });
 
-  const debits = await prisma.ledgerEntry.aggregate({
-    where: { walletId: senderWallet.id, type: "DEBIT" },
-    _sum: { amount: true },
-  });
+      const debits = await tx.ledgerEntry.aggregate({
+        where: { walletId: senderWallet.id, type: "DEBIT" },
+        _sum: { amount: true },
+      });
 
-  const balance = Number(credits._sum.amount || 0) - Number(debits._sum.amount || 0);
-  logger.info(`[P2P] Balance: credits=${credits._sum.amount} debits=${debits._sum.amount} balance=${balance} amount=${data.amount}`);
-  if (balance < data.amount) throw new AppError(400, `Insufficient balance (${balance.toFixed(2)} USDT available, ${data.amount} USDT needed)`);
+      const balance = Number(credits._sum.amount || 0) - Number(debits._sum.amount || 0);
+      logger.info(`[P2P] Balance: credits=${credits._sum.amount} debits=${debits._sum.amount} balance=${balance} amount=${data.amount}`);
+      if (balance < data.amount) throw new AppError(400, `Insufficient balance (${balance.toFixed(2)} USDT available, ${data.amount} USDT needed)`);
 
-  const referenceId = `P2P-${Date.now()}-${req.userId}`;
+      await tx.ledgerEntry.create({
+        data: {
+          walletId: senderWallet.id,
+          type: "DEBIT",
+          amount: data.amount,
+          reference: referenceId,
+          uniqueKey: `debit_${referenceId}`,
+        },
+      });
 
-  await ledgerService.debit(senderWallet.id, data.amount, referenceId);
-  await ledgerService.credit(finalRecipientWallet.id, data.amount, referenceId);
+      await tx.ledgerEntry.create({
+        data: {
+          walletId: finalRecipientWallet.id,
+          type: "CREDIT",
+          amount: data.amount,
+          reference: referenceId,
+          uniqueKey: `credit_${referenceId}`,
+        },
+      });
 
-  await prisma.walletTransaction.create({
-    data: {
-      walletId: senderWallet.id,
-      type: "TRANSFER",
-      amount: data.amount,
-      status: "COMPLETED",
-    },
-  });
+      await tx.walletTransaction.create({
+        data: {
+          walletId: senderWallet.id,
+          type: "TRANSFER",
+          amount: data.amount,
+          status: "COMPLETED",
+        },
+      });
 
-  await prisma.walletTransaction.create({
-    data: {
-      walletId: finalRecipientWallet.id,
-      type: "TRANSFER",
-      amount: data.amount,
-      status: "COMPLETED",
-    },
+      await tx.walletTransaction.create({
+        data: {
+          walletId: finalRecipientWallet.id,
+          type: "TRANSFER",
+          amount: data.amount,
+          status: "COMPLETED",
+        },
+      });
+
+      return { message: "Transfer completed", referenceId };
+    });
   });
 
   logger.info(`[P2P] ${req.userId} sent ${data.amount} USDT to ${data.recipientEmail} (recipient ${recipient.id})`);
-  res.json({ message: "Transfer completed", referenceId });
+  res.json(result);
 });
 
 export { router as walletRoutes };
