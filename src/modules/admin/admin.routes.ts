@@ -6,41 +6,46 @@ import { authenticate, AuthRequest, requireRole } from "../../middleware/auth";
 const router = Router();
 
 router.get("/dashboard", authenticate, requireRole("SUPER_ADMIN", "COMPLIANCE", "TREASURY", "OPS"), async (_req: AuthRequest, res: Response) => {
-  const [totalUsers, activeUsers, totalTransfers, pendingKyc, totalVolume, failedPayouts, openCases, fraudAlerts, alerts, recentActivity] = await Promise.all([
-    prisma.user.count(),
-    prisma.user.count({ where: { wallets: { some: { status: "ACTIVE" } } } }),
-    prisma.transfer.count({ where: { status: { in: ["PENDING_PAYOUT", "SENT_TO_PARTNER"] } } }),
-    prisma.kycProfile.count({ where: { status: "PENDING" } }),
-    prisma.treasuryWallet.aggregate({ _sum: { balance: true } }),
-    prisma.payoutOrder.count({ where: { status: "FAILED" } }),
-    prisma.complianceCase.count({ where: { status: { in: ["OPEN", "INVESTIGATING"] } } }),
-    prisma.systemAlert.count({ where: { severity: { in: ["CRITICAL", "HIGH"] }, status: "OPEN" } }),
-    prisma.systemAlert.findMany({ where: { status: "OPEN" }, orderBy: { createdAt: "desc" }, take: 10 }),
-    prisma.adminActionLog.findMany({ orderBy: { createdAt: "desc" }, take: 10 }),
-  ]);
+  try {
+    const [totalUsers, activeUsers, totalTransfers, pendingKyc, totalVolume, failedPayouts, openCases, fraudAlerts, alerts, recentActivity] = await Promise.all([
+      prisma.user.count(),
+      prisma.user.count({ where: { wallets: { some: { status: "ACTIVE" } } } }).catch(() => 0),
+      prisma.transfer.count({ where: { status: { in: ["PENDING_PAYOUT", "SENT_TO_PARTNER"] } } }).catch(() => 0),
+      prisma.kycProfile.count({ where: { status: "PENDING" } }).catch(() => 0),
+      prisma.treasuryWallet.aggregate({ _sum: { balance: true } }).catch(() => ({ _sum: { balance: 0 } })),
+      prisma.payoutOrder.count({ where: { status: "FAILED" } }).catch(() => 0),
+      prisma.complianceCase.count({ where: { status: { in: ["OPEN", "INVESTIGATING"] } } }).catch(() => 0),
+      prisma.systemAlert.count({ where: { severity: { in: ["CRITICAL", "HIGH"] }, status: "OPEN" } }).catch(() => 0),
+      prisma.systemAlert.findMany({ where: { status: "OPEN" }, orderBy: { createdAt: "desc" }, take: 10 }).catch(() => []),
+      prisma.adminActionLog.findMany({ orderBy: { createdAt: "desc" }, take: 10 }).catch(() => []),
+    ]);
 
-  res.json({
-    totalUsers,
-    activeUsers,
-    totalTransfers,
-    totalVolume: Number(totalVolume._sum.balance) || 0,
-    pendingKyc,
-    failedPayouts,
-    openCases,
-    fraudAlerts,
-    alerts: alerts.map((a: { id: string; severity: string; message: string | null; createdAt: Date }) => ({
-      id: a.id,
-      severity: a.severity as "CRITICAL" | "HIGH" | "MEDIUM" | "LOW",
-      message: a.message || "",
-      timestamp: a.createdAt,
-    })),
-    recentActivity: recentActivity.map((r: { id: string; action: string; entity: string | null; adminId: string; createdAt: Date }) => ({
-      id: r.id,
-      action: r.action,
-      user: r.entity || r.adminId || "System",
-      timestamp: r.createdAt,
-    })),
-  });
+    res.json({
+      totalUsers,
+      activeUsers,
+      totalTransfers,
+      totalVolume: Number(totalVolume._sum.balance) || 0,
+      pendingKyc,
+      failedPayouts,
+      openCases,
+      fraudAlerts,
+      alerts: alerts.map((a: { id: string; severity: string; message: string | null; createdAt: Date }) => ({
+        id: a.id,
+        severity: a.severity as "CRITICAL" | "HIGH" | "MEDIUM" | "LOW",
+        message: a.message || "",
+        timestamp: a.createdAt,
+      })),
+      recentActivity: recentActivity.map((r: { id: string; action: string; entity: string | null; adminId: string; createdAt: Date }) => ({
+        id: r.id,
+        action: r.action,
+        user: r.entity || r.adminId || "System",
+        timestamp: r.createdAt,
+      })),
+    });
+  } catch (err) {
+    console.error("[ADMIN] Dashboard error:", err);
+    res.status(500).json({ error: "Internal server error" });
+  }
 });
 
 router.get("/users", authenticate, requireRole("SUPER_ADMIN", "OPS"), async (_req: AuthRequest, res: Response) => {
@@ -101,10 +106,33 @@ router.post("/users/:id/toggle-status", authenticate, requireRole("SUPER_ADMIN")
 router.get("/kyc/pending", authenticate, requireRole("SUPER_ADMIN", "COMPLIANCE"), async (_req: AuthRequest, res: Response) => {
   const pending = await prisma.kycProfile.findMany({
     where: { status: "PENDING" },
-    include: { user: { select: { email: true, fullName: true } } },
+    include: {
+      user: { select: { email: true, fullName: true } },
+    },
     orderBy: { createdAt: "desc" },
   });
-  res.json(pending);
+  const kycDocs = await prisma.kycDocument.findMany({
+    where: { userId: { in: pending.map((p: { userId: string }) => p.userId) } },
+  });
+  const docsByUser = new Map<string, typeof kycDocs>();
+  for (const doc of kycDocs) {
+    const existing = docsByUser.get(doc.userId) || [];
+    existing.push(doc);
+    docsByUser.set(doc.userId, existing);
+  }
+  res.json(pending.map((p: { id: string; userId: string; tier: number; fullName: string | null; createdAt: Date; user: { email: string; fullName: string | null } }) => ({
+    id: p.id,
+    userId: p.userId,
+    email: p.user.email,
+    name: p.fullName || p.user.fullName || p.user.email,
+    tier: p.tier,
+    documents: (docsByUser.get(p.userId) || []).map((d: { id: string; documentType: string; status: string }) => ({
+      id: d.id,
+      type: d.documentType,
+      status: d.status,
+    })),
+    submittedAt: p.createdAt,
+  })));
 });
 
 router.post("/kyc/:id/approve", authenticate, requireRole("SUPER_ADMIN", "COMPLIANCE"), async (req: AuthRequest, res: Response) => {
@@ -150,7 +178,15 @@ router.get("/compliance-cases", authenticate, requireRole("SUPER_ADMIN", "COMPLI
     orderBy: { createdAt: "desc" },
     take: 50,
   });
-  res.json(cases);
+  res.json(cases.map((c: { id: string; userId: string | null; status: string | null; reason: string | null; assignedTo: string | null; createdAt: Date; user: { email: string; fullName: string | null } | null }) => ({
+    id: c.id,
+    userId: c.userId || "",
+    email: c.user?.email || "",
+    type: c.reason || "Suspicious Activity",
+    status: c.status || "OPEN",
+    severity: c.reason?.includes("HIGH") ? "HIGH" : c.reason?.includes("CRITICAL") ? "CRITICAL" : "MEDIUM",
+    createdAt: c.createdAt,
+  })));
 });
 
 router.post("/compliance-cases/:id/escalate", authenticate, requireRole("SUPER_ADMIN", "COMPLIANCE"), async (req: AuthRequest, res: Response) => {
@@ -164,10 +200,20 @@ router.post("/compliance-cases/:id/escalate", authenticate, requireRole("SUPER_A
 router.get("/payouts/failed", authenticate, requireRole("SUPER_ADMIN", "OPS"), async (_req: AuthRequest, res: Response) => {
   const payouts = await prisma.payoutOrder.findMany({
     where: { status: "FAILED" },
+    include: { transfer: { select: { amount: true, payoutMethod: true } } },
     orderBy: { createdAt: "desc" },
     take: 50,
   });
-  res.json(payouts);
+  res.json(payouts.map((p: { id: string; transferId: string; status: string; attemptCount: number; createdAt: Date; updatedAt: Date; partner: string | null; payoutMethod: string | null; transfer: { amount: { toString: () => string }; payoutMethod: string | null } | null }) => ({
+    id: p.id,
+    transferId: p.transferId,
+    amount: Number(p.transfer?.amount || 0),
+    currency: "USDT",
+    reason: p.partner ? `Failed at ${p.partner}` : "Processing error",
+    attempts: p.attemptCount,
+    lastAttempt: p.updatedAt,
+    status: p.status === "FAILED" ? "FAILED" : "PENDING_RETRY",
+  })));
 });
 
 router.post("/payouts/:id/retry", authenticate, requireRole("SUPER_ADMIN", "OPS"), async (req: AuthRequest, res: Response) => {
@@ -210,6 +256,11 @@ router.get("/notifications", authenticate, requireRole("SUPER_ADMIN", "COMPLIANC
   }));
 
   res.json(notifications);
+});
+
+router.get("/notifications/unread-count", authenticate, requireRole("SUPER_ADMIN", "COMPLIANCE", "TREASURY", "OPS"), async (_req: AuthRequest, res: Response) => {
+  const count = await prisma.systemAlert.count({ where: { status: "OPEN" } });
+  res.json({ count });
 });
 
 router.post("/notifications/:id/read", authenticate, requireRole("SUPER_ADMIN", "COMPLIANCE", "TREASURY", "OPS"), async (req: AuthRequest, res: Response) => {
