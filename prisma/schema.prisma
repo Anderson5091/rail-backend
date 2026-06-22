@@ -7,61 +7,55 @@ datasource db {
 }
 
 model User {
-  id            String   @id @default(cuid())
-  email         String   @unique
-  phone         String?
-  phoneVerified Boolean  @default(false)
-  password      String
-  fullName      String?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-
-  wallets         Wallet[]
-  transfers       Transfer[]
-  beneficiaries   Beneficiary[]
-  kycProfile      KycProfile?
-  kycDocuments    KycDocument[]
+  id              String           @id @default(cuid())
+  email           String           @unique
+  phone           String?
+  password        String
+  fullName        String?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  phoneVerified   Boolean          @default(false)
   amlChecks       AmlCheck[]
-  sanctionsHits   SanctionsHit[]
+  beneficiaries   Beneficiary[]
   complianceCases ComplianceCase[]
-  riskScore       RiskScore?
+  depositWallets  DepositWallet[]
+  kycDocuments    KycDocument[]
+  kycProfile      KycProfile?
   notifications   Notification[]
   otpCodes        OtpCode[]
-  depositWallets  DepositWallet[]
+  riskScore       RiskScore?
+  sanctionsHits   SanctionsHit[]
+  transfers       Transfer[]
+  wallets         Wallet?
 }
 
 model OtpCode {
   id        String   @id @default(cuid())
   userId    String?
-  email     String?
-  token     String?
   code      String
   type      String   @default("PHONE_VERIFICATION")
   expiresAt DateTime
   verified  Boolean  @default(false)
-  data      Json?
   createdAt DateTime @default(now())
-
-  user User? @relation(fields: [userId], references: [id])
+  data      Json?
+  email     String?
+  token     String?
+  user      User?    @relation(fields: [userId], references: [id])
 }
 
 model Wallet {
-  id      String @id @default(cuid())
-  userId  String
-  currency String @default("USDT")
-  status  String @default("ACTIVE")
-
-  crossmintWalletId String? @unique
+  id                String              @id @default(cuid())
+  userId            String              @unique
+  currency          String              @default("USDT")
+  status            String              @default("ACTIVE")
+  crossmintWalletId String?             @unique
   crossmintLocator  String?
   crossmintAddress  String?
-  crossmintChain    String  @default("base")
-
-  user        User               @relation(fields: [userId], references: [id])
-  addresses   WalletAddress[]
-  transactions WalletTransaction[]
-  ledgerEntries LedgerEntry[]
-
-  @@unique([userId])
+  crossmintChain    String              @default("base")
+  ledgerEntries     LedgerEntry[]
+  user              User                @relation(fields: [userId], references: [id])
+  addresses         WalletAddress[]
+  transactions      WalletTransaction[]
 }
 
 model WalletAddress {
@@ -69,61 +63,57 @@ model WalletAddress {
   walletId String
   network  String
   address  String @unique
-
-  wallet Wallet @relation(fields: [walletId], references: [id])
+  wallet   Wallet @relation(fields: [walletId], references: [id])
 }
 
 model WalletTransaction {
-  id       String   @id @default(cuid())
-  walletId String
-  type     String
-  amount   Decimal  @db.Decimal(24, 8)
-  network  String?
-  txHash   String?
-  status   String   @default("PENDING")
+  id        String   @id @default(cuid())
+  walletId  String
+  type      String
+  amount    Decimal  @db.Decimal(24, 8)
+  network   String?
+  txHash    String?
+  status    String   @default("PENDING")
   createdAt DateTime @default(now())
-
-  wallet Wallet @relation(fields: [walletId], references: [id])
+  wallet    Wallet   @relation(fields: [walletId], references: [id])
 }
 
 model LedgerEntry {
-  id         String   @id @default(cuid())
-  walletId   String
-  type       String
-  amount     Decimal  @db.Decimal(24, 8)
-  reference  String?
-  uniqueKey  String?  @unique
-  createdAt  DateTime @default(now())
-
-  wallet Wallet @relation(fields: [walletId], references: [id])
+  id        String   @id @default(cuid())
+  walletId  String
+  type      String
+  amount    Decimal  @db.Decimal(24, 8)
+  reference String?
+  uniqueKey String?  @unique
+  createdAt DateTime @default(now())
+  wallet    Wallet   @relation(fields: [walletId], references: [id])
 }
 
 model Beneficiary {
-  id                String   @id @default(cuid())
-  userId            String
-  fullName          String
-  country           String
-  payoutMethod      String
-  bankName          String?
-  accountNumber     String?
+  id                 String   @id @default(cuid())
+  userId             String
+  fullName           String
+  country            String
+  payoutMethod       String
+  bankName           String?
+  accountNumber      String?
   mobileWalletNumber String?
-  mobileProvider    String?
+  mobileProvider     String?
   cashPickupLocation String?
-  createdAt         DateTime @default(now())
-
-  user User @relation(fields: [userId], references: [id])
+  createdAt          DateTime @default(now())
+  user               User     @relation(fields: [userId], references: [id])
 }
 
 model FxRate {
-  id          String   @id @default(cuid())
+  id           String   @id @default(cuid())
   fromCurrency String
-  toCurrency  String
-  rate        Decimal  @db.Decimal(24, 8)
-  updatedAt   DateTime @updatedAt
+  toCurrency   String
+  rate         Decimal  @db.Decimal(24, 8)
+  updatedAt    DateTime @updatedAt
 }
 
 model FeeRule {
-  id           String @id @default(cuid())
+  id           String  @id @default(cuid())
   country      String
   payoutMethod String
   fixedFee     Decimal @db.Decimal(24, 8)
@@ -131,160 +121,152 @@ model FeeRule {
 }
 
 model Transfer {
-  id                String   @id @default(cuid())
+  id                String       @id @default(cuid())
   userId            String
   beneficiaryId     String?
-  amount            Decimal  @db.Decimal(24, 8)
+  amount            Decimal      @db.Decimal(24, 8)
   payoutMethod      String?
-  status            String   @default("DRAFT")
-  fxRate            Decimal? @db.Decimal(24, 8)
-  fee               Decimal? @db.Decimal(24, 8)
-  destinationAmount Decimal? @db.Decimal(24, 8)
-  referenceId       String?  @unique
+  status            String       @default("DRAFT")
+  fxRate            Decimal?     @db.Decimal(24, 8)
+  fee               Decimal?     @db.Decimal(24, 8)
+  destinationAmount Decimal?     @db.Decimal(24, 8)
+  referenceId       String?      @unique
   payoutOrderId     String?
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
-
-  user        User       @relation(fields: [userId], references: [id])
-  payoutOrder PayoutOrder?
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+  payoutOrder       PayoutOrder?
+  user              User         @relation(fields: [userId], references: [id])
 }
 
 model PayoutOrder {
-  id                String   @id @default(cuid())
-  transferId        String   @unique
+  id                String        @id @default(cuid())
+  transferId        String        @unique
   partner           String?
   payoutMethod      String?
-  status            String   @default("PENDING")
+  status            String        @default("PENDING")
   externalReference String?
-  attemptCount      Int      @default(0)
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
-
-  transfer     Transfer      @relation(fields: [transferId], references: [id])
-  payoutEvents PayoutEvent[]
-  partnerLogs  PartnerLog[]
+  attemptCount      Int           @default(0)
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+  partnerLogs       PartnerLog[]
+  payoutEvents      PayoutEvent[]
+  transfer          Transfer      @relation(fields: [transferId], references: [id])
 }
 
 model PayoutEvent {
-  id            String   @id @default(cuid())
+  id            String      @id @default(cuid())
   payoutOrderId String
   eventType     String
   payload       Json?
-  createdAt     DateTime @default(now())
-
-  payoutOrder PayoutOrder @relation(fields: [payoutOrderId], references: [id])
+  createdAt     DateTime    @default(now())
+  payoutOrder   PayoutOrder @relation(fields: [payoutOrderId], references: [id])
 }
 
 model PartnerLog {
-  id         String   @id @default(cuid())
+  id            String      @id @default(cuid())
   payoutOrderId String
-  partner    String
-  request    Json?
-  response   Json?
-  statusCode Int?
-  createdAt  DateTime @default(now())
-
-  payoutOrder PayoutOrder @relation(fields: [payoutOrderId], references: [id])
+  partner       String
+  request       Json?
+  response      Json?
+  statusCode    Int?
+  createdAt     DateTime    @default(now())
+  payoutOrder   PayoutOrder @relation(fields: [payoutOrderId], references: [id])
 }
 
 model TreasuryWallet {
-  id              String   @id @default(cuid())
-  walletType      String
-  network         String
-  chain           String
-  address         String   @unique
+  id                String             @id @default(cuid())
+  walletType        String
+  network           String
+  chain             String
+  address           String             @unique
   crossmintWalletId String?
-  walletLocator   String?
-  balance         Decimal  @default(0) @db.Decimal(24, 8)
-  thresholdMin    Decimal? @db.Decimal(24, 8)
-  thresholdMax    Decimal? @db.Decimal(24, 8)
-  status          String   @default("ACTIVE")
-  lastSync        DateTime @default(now())
-  createdAt       DateTime @default(now())
-
-  movementsFrom TreasuryMovement[] @relation("FromWallet")
-  movementsTo   TreasuryMovement[] @relation("ToWallet")
+  walletLocator     String?
+  balance           Decimal            @default(0) @db.Decimal(24, 8)
+  thresholdMin      Decimal?           @db.Decimal(24, 8)
+  thresholdMax      Decimal?           @db.Decimal(24, 8)
+  status            String             @default("ACTIVE")
+  lastSync          DateTime           @default(now())
+  createdAt         DateTime           @default(now())
+  movementsFrom     TreasuryMovement[] @relation("FromWallet")
+  movementsTo       TreasuryMovement[] @relation("ToWallet")
 }
 
 model TreasuryMovement {
-  id         String   @id @default(cuid())
+  id           String          @id @default(cuid())
   fromWalletId String?
   toWalletId   String?
-  fromWallet String
-  toWallet   String
-  amount     Decimal  @db.Decimal(24, 8)
-  network    String
-  reason     String?
-  status     String   @default("PENDING")
-  txHash     String?
-  createdAt  DateTime @default(now())
-
-  from TreasuryWallet? @relation("FromWallet", fields: [fromWalletId], references: [id])
-  to   TreasuryWallet? @relation("ToWallet", fields: [toWalletId], references: [id])
+  fromWallet   String
+  toWallet     String
+  amount       Decimal         @db.Decimal(24, 8)
+  network      String
+  reason       String?
+  status       String          @default("PENDING")
+  txHash       String?
+  createdAt    DateTime        @default(now())
+  from         TreasuryWallet? @relation("FromWallet", fields: [fromWalletId], references: [id])
+  to           TreasuryWallet? @relation("ToWallet", fields: [toWalletId], references: [id])
 }
 
 model LiquiditySnapshot {
-  id          String   @id @default(cuid())
-  network     String
-  chain       String
-  hotBalance  Decimal  @db.Decimal(24, 8)
-  warmBalance Decimal  @db.Decimal(24, 8)
-  coldBalance Decimal  @db.Decimal(24, 8)
-  totalBalance Decimal @db.Decimal(24, 8)
-  createdAt   DateTime @default(now())
+  id           String   @id @default(cuid())
+  network      String
+  chain        String
+  hotBalance   Decimal  @db.Decimal(24, 8)
+  warmBalance  Decimal  @db.Decimal(24, 8)
+  coldBalance  Decimal  @db.Decimal(24, 8)
+  totalBalance Decimal  @db.Decimal(24, 8)
+  createdAt    DateTime @default(now())
 }
 
 model DepositRequest {
-  id        String   @id @default(cuid())
-  userId    String
+  id              String         @id @default(cuid())
+  userId          String
+  chain           String
+  token           String         @default("USDT")
+  amount          Decimal?       @db.Decimal(24, 8)
+  fee             Decimal?       @db.Decimal(24, 8)
+  netAmount       Decimal?       @db.Decimal(24, 8)
+  status          String         @default("PENDING")
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  confirmations   Int            @default(0)
   depositWalletId String?
-  chain     String
-  token     String   @default("USDT")
-  amount    Decimal? @db.Decimal(24, 8)
-  fee       Decimal? @db.Decimal(24, 8)
-  netAmount Decimal? @db.Decimal(24, 8)
-  txHash    String?
-  confirmations Int @default(0)
-  status    String   @default("PENDING")
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  depositWallet DepositWallet? @relation(fields: [depositWalletId], references: [id])
+  txHash          String?
+  depositWallet   DepositWallet? @relation(fields: [depositWalletId], references: [id])
 }
 
 model DepositWallet {
-  id               String   @id @default(cuid())
-  userId           String
-  alias            String
+  id                String           @id @default(cuid())
   crossmintWalletId String
-  walletLocator    String
-  address          String
-  chain            String
-  status           String   @default("ACTIVE")
-  expiresAt        DateTime?
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
-
-  user User @relation(fields: [userId], references: [id])
-  depositRequests DepositRequest[]
+  walletLocator     String
+  address           String
+  chain             String
+  status            String           @default("ACTIVE")
+  expiresAt         DateTime?
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+  alias             String
+  userId            String
+  depositRequests   DepositRequest[]
+  user              User             @relation(fields: [userId], references: [id])
 
   @@unique([userId, alias])
 }
 
 model Withdrawal {
-  id            String   @id @default(cuid())
-  userId        String
-  walletId      String?
-  amount        Decimal  @db.Decimal(24, 8)
-  fee           Decimal  @default(0) @db.Decimal(24, 8)
-  netAmount     Decimal  @db.Decimal(24, 8)
-  chain         String
+  id                 String   @id @default(cuid())
+  userId             String
+  walletId           String?
+  amount             Decimal  @db.Decimal(24, 8)
+  fee                Decimal  @default(0) @db.Decimal(24, 8)
+  netAmount          Decimal  @db.Decimal(24, 8)
+  chain              String
   destinationAddress String
-  txHash        String?
-  explorerLink  String?
-  status        String   @default("PENDING")
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  txHash             String?
+  explorerLink       String?
+  status             String   @default("PENDING")
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
 }
 
 model KycProfile {
@@ -297,8 +279,7 @@ model KycProfile {
   dateOfBirth String?
   address     String?
   createdAt   DateTime @default(now())
-
-  user User @relation(fields: [userId], references: [id])
+  user        User     @relation(fields: [userId], references: [id])
 }
 
 model KycDocument {
@@ -308,8 +289,7 @@ model KycDocument {
   fileUrl      String?
   status       String   @default("PENDING")
   createdAt    DateTime @default(now())
-
-  user User @relation(fields: [userId], references: [id])
+  user         User     @relation(fields: [userId], references: [id])
 }
 
 model AmlCheck {
@@ -319,8 +299,7 @@ model AmlCheck {
   riskLevel     String?
   flags         Json?
   createdAt     DateTime @default(now())
-
-  user User? @relation(fields: [userId], references: [id])
+  user          User?    @relation(fields: [userId], references: [id])
 }
 
 model SanctionsHit {
@@ -330,20 +309,18 @@ model SanctionsHit {
   listSource String?
   status     String?
   createdAt  DateTime @default(now())
-
-  user User? @relation(fields: [userId], references: [id])
+  user       User?    @relation(fields: [userId], references: [id])
 }
 
 model ComplianceCase {
-  id           String   @id @default(cuid())
-  userId       String?
+  id            String   @id @default(cuid())
+  userId        String?
   transactionId String?
-  status       String?
-  reason       String?
-  assignedTo   String?
-  createdAt    DateTime @default(now())
-
-  user User? @relation(fields: [userId], references: [id])
+  status        String?
+  reason        String?
+  assignedTo    String?
+  createdAt     DateTime @default(now())
+  user          User?    @relation(fields: [userId], references: [id])
 }
 
 model RiskScore {
@@ -353,8 +330,7 @@ model RiskScore {
   level     String?
   factors   Json?
   updatedAt DateTime @updatedAt
-
-  user User @relation(fields: [userId], references: [id])
+  user      User     @relation(fields: [userId], references: [id])
 }
 
 model IdempotencyKey {
@@ -378,29 +354,27 @@ model Event {
 }
 
 model Notification {
-  id        String   @id @default(cuid())
-  userId    String?
-  type      String?
-  channel   String?
-  title     String?
-  message   String?
-  status    String   @default("PENDING")
-  createdAt DateTime @default(now())
-
-  user User? @relation(fields: [userId], references: [id])
+  id         String                 @id @default(cuid())
+  userId     String?
+  type       String?
+  channel    String?
+  title      String?
+  message    String?
+  status     String                 @default("PENDING")
+  createdAt  DateTime               @default(now())
+  user       User?                  @relation(fields: [userId], references: [id])
   deliveries NotificationDelivery[]
 }
 
 model NotificationDelivery {
-  id             String   @id @default(cuid())
+  id             String        @id @default(cuid())
   notificationId String?
   provider       String?
   status         String?
   response       Json?
-  attemptCount   Int      @default(0)
-  createdAt      DateTime @default(now())
-
-  notification Notification? @relation(fields: [notificationId], references: [id])
+  attemptCount   Int           @default(0)
+  createdAt      DateTime      @default(now())
+  notification   Notification? @relation(fields: [notificationId], references: [id])
 }
 
 model EventLog {
@@ -413,19 +387,18 @@ model EventLog {
 }
 
 model Partner {
-  id        String   @id @default(cuid())
-  name      String
-  type      String
-  country   String?
-  status    String   @default("ACTIVE")
-  baseUrl   String?
-  apiKey    String?
-  priority  Int      @default(1)
-  createdAt DateTime @default(now())
-
+  id           String               @id @default(cuid())
+  name         String
+  type         String
+  country      String?
+  status       String               @default("ACTIVE")
+  baseUrl      String?
+  apiKey       String?
+  priority     Int                  @default(1)
+  createdAt    DateTime             @default(now())
+  slaMetrics   PartnerSlaMetric?
   transactions PartnerTransaction[]
   webhooks     PartnerWebhook[]
-  slaMetrics   PartnerSlaMetric?
 }
 
 model PartnerTransaction {
@@ -437,8 +410,7 @@ model PartnerTransaction {
   requestPayload    Json?
   responsePayload   Json?
   createdAt         DateTime @default(now())
-
-  partner Partner? @relation(fields: [partnerId], references: [id])
+  partner           Partner? @relation(fields: [partnerId], references: [id])
 }
 
 model PartnerWebhook {
@@ -448,8 +420,7 @@ model PartnerWebhook {
   payload   Json?
   processed Boolean  @default(false)
   createdAt DateTime @default(now())
-
-  partner Partner? @relation(fields: [partnerId], references: [id])
+  partner   Partner? @relation(fields: [partnerId], references: [id])
 }
 
 model PartnerSlaMetric {
@@ -459,8 +430,7 @@ model PartnerSlaMetric {
   avgResponseTimeMs Int?
   failureCount      Int      @default(0)
   updatedAt         DateTime @updatedAt
-
-  partner Partner @relation(fields: [partnerId], references: [id])
+  partner           Partner  @relation(fields: [partnerId], references: [id])
 }
 
 model AdminUser {
@@ -473,23 +443,22 @@ model AdminUser {
 }
 
 model Agent {
-  id           String   @id @default(cuid())
-  email        String   @unique
-  phone        String?
-  fullName     String?
-  passwordHash String
-  type         String   @default("PARTNER")
-  status       String   @default("ACTIVE")
-  createdBy    String?
-  kpiRating    Float?
-  totalRewards     Decimal  @default(0) @db.Decimal(24, 8)
-  commissionLedger Decimal  @default(0) @db.Decimal(24, 8)
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
-
-  wallets      AgentWallet[]
-  transactions AgentTransaction[]
-  kpiEntries   AgentKpi[]
+  id               String             @id @default(cuid())
+  email            String             @unique
+  phone            String?
+  fullName         String?
+  passwordHash     String
+  type             String             @default("PARTNER")
+  status           String             @default("ACTIVE")
+  createdBy        String?
+  kpiRating        Float?
+  totalRewards     Decimal            @default(0) @db.Decimal(24, 8)
+  commissionLedger Decimal            @default(0) @db.Decimal(24, 8)
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+  kpiEntries       AgentKpi[]
+  transactions     AgentTransaction[]
+  wallets          AgentWallet[]
 }
 
 model AgentWallet {
@@ -506,24 +475,22 @@ model AgentWallet {
   lastSync          DateTime @default(now())
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
-
-  agent Agent @relation(fields: [agentId], references: [id])
+  agent             Agent    @relation(fields: [agentId], references: [id])
 }
 
 model AgentTransaction {
-  id          String   @id @default(cuid())
-  agentId     String
-  type        String
-  amount      Decimal  @db.Decimal(24, 8)
-  commission  Decimal  @default(0) @db.Decimal(24, 8)
-  netAmount   Decimal  @db.Decimal(24, 8)
-  userRef     String?
-  status      String   @default("COMPLETED")
-  reference   String?  @unique
-  metadata    Json?
-  createdAt   DateTime @default(now())
-
-  agent Agent @relation(fields: [agentId], references: [id])
+  id         String   @id @default(cuid())
+  agentId    String
+  type       String
+  amount     Decimal  @db.Decimal(24, 8)
+  commission Decimal  @default(0) @db.Decimal(24, 8)
+  netAmount  Decimal  @db.Decimal(24, 8)
+  userRef    String?
+  status     String   @default("COMPLETED")
+  reference  String?  @unique
+  metadata   Json?
+  createdAt  DateTime @default(now())
+  agent      Agent    @relation(fields: [agentId], references: [id])
 }
 
 model AgentKpi {
@@ -538,8 +505,7 @@ model AgentKpi {
   rewardPoints    Decimal  @default(0) @db.Decimal(24, 8)
   rating          Float?
   createdAt       DateTime @default(now())
-
-  agent Agent @relation(fields: [agentId], references: [id])
+  agent           Agent    @relation(fields: [agentId], references: [id])
 
   @@unique([agentId, period, periodStart])
 }
