@@ -10,7 +10,9 @@
     "db:generate": "prisma generate",
     "db:push": "prisma db push",
     "db:migrate": "prisma migrate dev",
-    "db:seed": "tsx prisma/seed.ts"
+    "db:seed": "tsx prisma/seed.ts",
+    "sync": "powershell -NoProfile -File ../sync-to-rail.ps1",
+    "sync:push": "powershell -NoProfile -File ../sync-to-rail.ps1 -Push"
   },
   "dependencies": {
     "@crossmint/common-sdk-base": "^0.10.2",

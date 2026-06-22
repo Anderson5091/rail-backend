@@ -10,7 +10,7 @@ const payoutOrchestrator = new PayoutOrchestrator();
 
 function generateTransactionNumber(): string {
   const digits = crypto.randomInt(1000000000, 9999999999).toString();
-  return `MTCN-${digits}`;
+  return `QS-${digits}`;
 }
 
 export class TransferOrchestrator {
@@ -64,6 +64,7 @@ export class TransferOrchestrator {
           amount: data.amount,
           status: "PENDING",
           transactionNumber,
+          payoutOrderId: payoutOrder.id,
         },
       });
 
