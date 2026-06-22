@@ -41,7 +41,6 @@ async function main() {
   await prisma.walletTransaction.deleteMany();
   await prisma.walletAddress.deleteMany();
   await prisma.wallet.deleteMany();
-  await prisma.userCryptoWallet.deleteMany();
   await prisma.otpCode.deleteMany();
   await prisma.payoutEvent.deleteMany();
   await prisma.partnerLog.deleteMany();
@@ -53,6 +52,10 @@ async function main() {
   await prisma.treasuryMovement.deleteMany();
   await prisma.treasuryWallet.deleteMany();
   await prisma.liquiditySnapshot.deleteMany();
+  await prisma.agentKpi.deleteMany();
+  await prisma.agentTransaction.deleteMany();
+  await prisma.agentWallet.deleteMany();
+  await prisma.agent.deleteMany();
   await prisma.adminActionLog.deleteMany();
   await prisma.adminUser.deleteMany();
   await prisma.user.deleteMany();
