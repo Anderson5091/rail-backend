@@ -1,4 +1,5 @@
 import { Router, Response } from "express";
+import bcrypt from "bcryptjs";
 import { prisma } from "../../config/database";
 import { authenticate, AuthRequest, requireRole } from "../../middleware/auth";
 
@@ -268,6 +269,89 @@ router.get("/fraud/analyze/:userId", authenticate, requireRole("SUPER_ADMIN", "C
       timestamp: t.createdAt,
     })),
   });
+});
+
+router.get("/admins", authenticate, requireRole("SUPER_ADMIN"), async (_req: AuthRequest, res: Response) => {
+  const admins = await prisma.adminUser.findMany({
+    select: { id: true, email: true, role: true, status: true, createdAt: true },
+    orderBy: { createdAt: "desc" },
+  });
+  res.json(admins);
+});
+
+router.post("/admins", authenticate, requireRole("SUPER_ADMIN"), async (req: AuthRequest, res: Response) => {
+  const { email, password, role } = req.body;
+  if (!email || !password) return res.status(400).json({ error: "email and password are required" });
+  if (password.length < 8) return res.status(400).json({ error: "Password must be at least 8 characters" });
+  if (!["SUPER_ADMIN", "COMPLIANCE", "OPS", "TREASURY"].includes(role)) {
+    return res.status(400).json({ error: "Invalid role" });
+  }
+
+  const existing = await prisma.adminUser.findUnique({ where: { email } });
+  if (existing) return res.status(409).json({ error: "Email already registered" });
+
+  const passwordHash = await bcrypt.hash(password, 12);
+  const admin = await prisma.adminUser.create({
+    data: { email, passwordHash, role },
+    select: { id: true, email: true, role: true, status: true, createdAt: true },
+  });
+
+  await prisma.adminActionLog.create({
+    data: {
+      adminId: req.userId,
+      action: "CREATE_ADMIN",
+      entity: "AdminUser",
+      entityId: admin.id,
+      metadata: { email, role },
+    },
+  });
+
+  res.status(201).json(admin);
+});
+
+router.post("/admins/:id/toggle-status", authenticate, requireRole("SUPER_ADMIN"), async (req: AuthRequest, res: Response) => {
+  if (req.params.id === req.userId) return res.status(400).json({ error: "Cannot toggle your own status" });
+
+  const admin = await prisma.adminUser.findUnique({ where: { id: req.params.id } });
+  if (!admin) return res.status(404).json({ error: "Admin not found" });
+
+  const newStatus = admin.status === "ACTIVE" ? "SUSPENDED" : "ACTIVE";
+  await prisma.adminUser.update({
+    where: { id: req.params.id },
+    data: { status: newStatus },
+  });
+
+  await prisma.adminActionLog.create({
+    data: {
+      adminId: req.userId,
+      action: newStatus === "SUSPENDED" ? "SUSPEND_ADMIN" : "ACTIVATE_ADMIN",
+      entity: "AdminUser",
+      entityId: req.params.id,
+    },
+  });
+
+  res.json({ status: newStatus });
+});
+
+router.delete("/admins/:id", authenticate, requireRole("SUPER_ADMIN"), async (req: AuthRequest, res: Response) => {
+  if (req.params.id === req.userId) return res.status(400).json({ error: "Cannot delete your own account" });
+
+  const admin = await prisma.adminUser.findUnique({ where: { id: req.params.id } });
+  if (!admin) return res.status(404).json({ error: "Admin not found" });
+
+  await prisma.adminUser.delete({ where: { id: req.params.id } });
+
+  await prisma.adminActionLog.create({
+    data: {
+      adminId: req.userId,
+      action: "DELETE_ADMIN",
+      entity: "AdminUser",
+      entityId: req.params.id,
+      metadata: { email: admin.email, role: admin.role },
+    },
+  });
+
+  res.json({ success: true });
 });
 
 export { router as adminRoutes };

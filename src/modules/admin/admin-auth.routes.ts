@@ -4,7 +4,7 @@ import bcrypt from "bcryptjs";
 import { prisma } from "../../config/database";
 import { generateToken } from "../../utils/token";
 import { AppError } from "../../middleware/errorHandler";
-import { authenticate, AuthRequest } from "../../middleware/auth";
+import { authenticate, AuthRequest, requireRole } from "../../middleware/auth";
 import { authLimiter } from "../../middleware/rateLimiter";
 
 const router = Router();
@@ -46,7 +46,7 @@ router.get("/me", authenticate, async (req: AuthRequest, res: Response) => {
   res.json(admin);
 });
 
-router.post("/register", authLimiter, async (req: AuthRequest, res: Response) => {
+router.post("/register", authenticate, requireRole("SUPER_ADMIN"), async (req: AuthRequest, res: Response) => {
   const registerSchema = z.object({
     email: z.string().email(),
     password: z.string().min(8),
