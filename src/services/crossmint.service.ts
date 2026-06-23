@@ -68,7 +68,7 @@ class CrossmintService {
       };
 
       if (userId) {
-        params.linkedUser = `user:${userId}`;
+        params.owner = `user:${userId}`;
       }
       if (alias) {
         params.alias = alias;
@@ -76,9 +76,15 @@ class CrossmintService {
 
       const wallet = await this.walletsSdk.createWallet(params);
 
+      // The wallet.address is the blockchain address, which doubles as a valid wallet locator
+      // for the Crossmint SDK (WalletLocator accepts Address format).
+      // After creation, retrieve the wallet by address to get the full wallet object including locator.
+      const walletLocator = wallet.address;
+      const crossmintWalletId = wallet.address;
+
       return {
-        crossmintWalletId: wallet.address,
-        walletLocator: wallet.address,
+        crossmintWalletId,
+        walletLocator,
         address: wallet.address,
         chain: String(chain),
         owner: wallet.owner,

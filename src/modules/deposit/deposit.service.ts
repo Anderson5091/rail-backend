@@ -20,7 +20,7 @@ export class DepositService {
       throw new Error(`Unsupported chain: ${chain}`);
     }
 
-    const alias = token.toLowerCase();
+    const alias = mapping.alias;
 
     let depositWallet = await prisma.depositWallet.findUnique({
       where: { userId_alias: { userId, alias } },
