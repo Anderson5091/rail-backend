@@ -77,13 +77,13 @@ router.post("/register", async (req: Request, res: Response) => {
     data: { userId: user.id },
   });
 
-  await ledgerService.credit(wallet.id, 2, `welcome_bonus_${user.id}`);
+  await ledgerService.credit(wallet.id, 200, `welcome_bonus_${user.id}`);
 
   await prisma.walletTransaction.create({
     data: {
       walletId: wallet.id,
       type: "DEPOSIT",
-      amount: 2,
+      amount: 200,
       status: "COMPLETED",
     },
   });
