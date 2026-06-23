@@ -49,7 +49,7 @@ router.get("/users", authenticate, requireRole("SUPER_ADMIN", "ADMIN", "OPS"), a
     select: {
       id: true, email: true, fullName: true, createdAt: true,
       kycProfile: { select: { tier: true } },
-      wallets: { take: 1, select: { status: true } },
+      wallets: { select: { status: true } },
       _count: { select: { transfers: true } },
     },
     orderBy: { createdAt: "desc" },
@@ -64,11 +64,11 @@ router.get("/users", authenticate, requireRole("SUPER_ADMIN", "ADMIN", "OPS"), a
   });
   const volumeMap = new Map(volumeRows.map((r: { userId: string; _sum: { amount: unknown } }) => [r.userId, Number(r._sum.amount) || 0]));
 
-  res.json(users.map((u: { id: string; email: string; fullName: string | null; createdAt: Date; kycProfile: { tier: number | null } | null; wallets: { status: string }[]; _count: { transfers: number } }) => ({
+  res.json(users.map((u: { id: string; email: string; fullName: string | null; createdAt: Date; kycProfile: { tier: number | null } | null; wallets: { status: string } | null; _count: { transfers: number } }) => ({
     id: u.id,
     email: u.email,
     name: u.fullName || u.email,
-    status: u.wallets[0]?.status || "ACTIVE",
+    status: u.wallets?.status || "ACTIVE",
     kycTier: u.kycProfile?.tier ?? 0,
     totalTransfers: u._count.transfers,
     totalVolume: volumeMap.get(u.id) || 0,
