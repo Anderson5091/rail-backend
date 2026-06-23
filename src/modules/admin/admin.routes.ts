@@ -6,7 +6,7 @@ import { ledgerService } from "../ledger/ledger.service";
 
 const router = Router();
 
-router.get("/dashboard", authenticate, requireRole("SUPER_ADMIN", "COMPLIANCE", "TREASURY", "OPS"), async (_req: AuthRequest, res: Response) => {
+router.get("/dashboard", authenticate, requireRole("SUPER_ADMIN", "ADMIN", "COMPLIANCE", "TREASURY", "OPS"), async (_req: AuthRequest, res: Response) => {
   const [totalUsers, activeUsers, totalTransfers, pendingKyc, totalVolume, failedPayouts, openCases, fraudAlerts, alerts, recentActivity] = await Promise.all([
     prisma.user.count(),
     prisma.user.count({ where: { wallets: { some: { status: "ACTIVE" } } } }),
@@ -44,7 +44,7 @@ router.get("/dashboard", authenticate, requireRole("SUPER_ADMIN", "COMPLIANCE", 
   });
 });
 
-router.get("/users", authenticate, requireRole("SUPER_ADMIN", "OPS"), async (_req: AuthRequest, res: Response) => {
+router.get("/users", authenticate, requireRole("SUPER_ADMIN", "ADMIN", "OPS"), async (_req: AuthRequest, res: Response) => {
   const users = await prisma.user.findMany({
     select: {
       id: true, email: true, fullName: true, createdAt: true,
@@ -99,7 +99,7 @@ router.post("/users/:id/toggle-status", authenticate, requireRole("SUPER_ADMIN")
   res.json({ status: newStatus });
 });
 
-router.get("/kyc/pending", authenticate, requireRole("SUPER_ADMIN", "COMPLIANCE"), async (_req: AuthRequest, res: Response) => {
+router.get("/kyc/pending", authenticate, requireRole("SUPER_ADMIN", "ADMIN", "COMPLIANCE"), async (_req: AuthRequest, res: Response) => {
   const pending = await prisma.kycProfile.findMany({
     where: { status: "PENDING" },
     include: { user: { select: { email: true, fullName: true } } },
@@ -108,7 +108,7 @@ router.get("/kyc/pending", authenticate, requireRole("SUPER_ADMIN", "COMPLIANCE"
   res.json(pending);
 });
 
-router.post("/kyc/:id/approve", authenticate, requireRole("SUPER_ADMIN", "COMPLIANCE"), async (req: AuthRequest, res: Response) => {
+router.post("/kyc/:id/approve", authenticate, requireRole("SUPER_ADMIN", "ADMIN", "COMPLIANCE"), async (req: AuthRequest, res: Response) => {
   const profile = await prisma.kycProfile.update({
     where: { id: req.params.id },
     data: { status: "APPROVED" },
@@ -126,7 +126,7 @@ router.post("/kyc/:id/approve", authenticate, requireRole("SUPER_ADMIN", "COMPLI
   res.json({ status: "APPROVED" });
 });
 
-router.post("/kyc/:id/reject", authenticate, requireRole("SUPER_ADMIN", "COMPLIANCE"), async (req: AuthRequest, res: Response) => {
+router.post("/kyc/:id/reject", authenticate, requireRole("SUPER_ADMIN", "ADMIN", "COMPLIANCE"), async (req: AuthRequest, res: Response) => {
   const profile = await prisma.kycProfile.update({
     where: { id: req.params.id },
     data: { status: "REJECTED" },
@@ -145,7 +145,7 @@ router.post("/kyc/:id/reject", authenticate, requireRole("SUPER_ADMIN", "COMPLIA
   res.json({ status: "REJECTED" });
 });
 
-router.get("/compliance-cases", authenticate, requireRole("SUPER_ADMIN", "COMPLIANCE"), async (_req: AuthRequest, res: Response) => {
+router.get("/compliance-cases", authenticate, requireRole("SUPER_ADMIN", "ADMIN", "COMPLIANCE"), async (_req: AuthRequest, res: Response) => {
   const cases = await prisma.complianceCase.findMany({
     include: { user: { select: { email: true, fullName: true } } },
     orderBy: { createdAt: "desc" },
@@ -154,7 +154,7 @@ router.get("/compliance-cases", authenticate, requireRole("SUPER_ADMIN", "COMPLI
   res.json(cases);
 });
 
-router.post("/compliance-cases/:id/escalate", authenticate, requireRole("SUPER_ADMIN", "COMPLIANCE"), async (req: AuthRequest, res: Response) => {
+router.post("/compliance-cases/:id/escalate", authenticate, requireRole("SUPER_ADMIN", "ADMIN", "COMPLIANCE"), async (req: AuthRequest, res: Response) => {
   await prisma.complianceCase.update({
     where: { id: req.params.id },
     data: { status: "ESCALATED" },
@@ -162,7 +162,7 @@ router.post("/compliance-cases/:id/escalate", authenticate, requireRole("SUPER_A
   res.json({ status: "ESCALATED" });
 });
 
-router.get("/payouts/failed", authenticate, requireRole("SUPER_ADMIN", "OPS"), async (_req: AuthRequest, res: Response) => {
+router.get("/payouts/failed", authenticate, requireRole("SUPER_ADMIN", "ADMIN", "OPS"), async (_req: AuthRequest, res: Response) => {
   const payouts = await prisma.payoutOrder.findMany({
     where: { status: "FAILED" },
     orderBy: { createdAt: "desc" },
@@ -171,7 +171,7 @@ router.get("/payouts/failed", authenticate, requireRole("SUPER_ADMIN", "OPS"), a
   res.json(payouts);
 });
 
-router.post("/payouts/:id/retry", authenticate, requireRole("SUPER_ADMIN", "OPS"), async (req: AuthRequest, res: Response) => {
+router.post("/payouts/:id/retry", authenticate, requireRole("SUPER_ADMIN", "ADMIN", "OPS"), async (req: AuthRequest, res: Response) => {
   const payout = await prisma.payoutOrder.findUnique({ where: { id: req.params.id } });
   if (!payout) return res.status(404).json({ error: "Payout not found" });
   if (payout.attemptCount >= 3) return res.status(400).json({ error: "Max retries reached" });
@@ -193,7 +193,7 @@ router.post("/payouts/:id/retry", authenticate, requireRole("SUPER_ADMIN", "OPS"
   res.json({ status: "RETRY_QUEUED" });
 });
 
-router.post("/payouts/:id/revert", authenticate, requireRole("SUPER_ADMIN", "OPS"), async (req: AuthRequest, res: Response) => {
+router.post("/payouts/:id/revert", authenticate, requireRole("SUPER_ADMIN", "ADMIN", "OPS"), async (req: AuthRequest, res: Response) => {
   const payout = await prisma.payoutOrder.findUnique({ where: { id: req.params.id } });
   if (!payout) return res.status(404).json({ error: "Payout not found" });
   if (payout.status !== "FAILED") return res.status(400).json({ error: "Only failed payouts can be reverted" });
@@ -237,7 +237,7 @@ router.post("/payouts/:id/revert", authenticate, requireRole("SUPER_ADMIN", "OPS
   res.json({ success: true, message: "Funds reverted to user wallet" });
 });
 
-router.get("/notifications", authenticate, requireRole("SUPER_ADMIN", "COMPLIANCE", "TREASURY", "OPS"), async (_req: AuthRequest, res: Response) => {
+router.get("/notifications", authenticate, requireRole("SUPER_ADMIN", "ADMIN", "COMPLIANCE", "TREASURY", "OPS"), async (_req: AuthRequest, res: Response) => {
   const systemAlerts = await prisma.systemAlert.findMany({
     where: { status: { not: "CLOSED" } },
     orderBy: { createdAt: "desc" },
@@ -257,7 +257,7 @@ router.get("/notifications", authenticate, requireRole("SUPER_ADMIN", "COMPLIANC
   res.json(notifications);
 });
 
-router.post("/notifications/:id/read", authenticate, requireRole("SUPER_ADMIN", "COMPLIANCE", "TREASURY", "OPS"), async (req: AuthRequest, res: Response) => {
+router.post("/notifications/:id/read", authenticate, requireRole("SUPER_ADMIN", "ADMIN", "COMPLIANCE", "TREASURY", "OPS"), async (req: AuthRequest, res: Response) => {
   await prisma.systemAlert.update({
     where: { id: req.params.id },
     data: { status: "CLOSED" },
@@ -265,7 +265,7 @@ router.post("/notifications/:id/read", authenticate, requireRole("SUPER_ADMIN", 
   res.json({ success: true });
 });
 
-router.post("/notifications/mark-all-read", authenticate, requireRole("SUPER_ADMIN", "COMPLIANCE", "TREASURY", "OPS"), async (_req: AuthRequest, res: Response) => {
+router.post("/notifications/mark-all-read", authenticate, requireRole("SUPER_ADMIN", "ADMIN", "COMPLIANCE", "TREASURY", "OPS"), async (_req: AuthRequest, res: Response) => {
   await prisma.systemAlert.updateMany({
     where: { status: "OPEN" },
     data: { status: "CLOSED" },
@@ -273,7 +273,7 @@ router.post("/notifications/mark-all-read", authenticate, requireRole("SUPER_ADM
   res.json({ success: true });
 });
 
-router.get("/fraud/analyze/:userId", authenticate, requireRole("SUPER_ADMIN", "COMPLIANCE"), async (req: AuthRequest, res: Response) => {
+router.get("/fraud/analyze/:userId", authenticate, requireRole("SUPER_ADMIN", "ADMIN", "COMPLIANCE"), async (req: AuthRequest, res: Response) => {
   const user = await prisma.user.findUnique({
     where: { id: req.params.userId },
     include: {
@@ -328,7 +328,7 @@ router.post("/admins", authenticate, requireRole("SUPER_ADMIN"), async (req: Aut
   const { email, password, role } = req.body;
   if (!email || !password) return res.status(400).json({ error: "email and password are required" });
   if (password.length < 8) return res.status(400).json({ error: "Password must be at least 8 characters" });
-  if (!["SUPER_ADMIN", "COMPLIANCE", "OPS", "TREASURY"].includes(role)) {
+  if (!["SUPER_ADMIN", "ADMIN", "COMPLIANCE", "OPS", "TREASURY"].includes(role)) {
     return res.status(400).json({ error: "Invalid role" });
   }
 

@@ -50,7 +50,7 @@ router.post("/register", authenticate, requireRole("SUPER_ADMIN"), async (req: A
   const registerSchema = z.object({
     email: z.string().email(),
     password: z.string().min(8),
-    role: z.enum(["SUPER_ADMIN", "COMPLIANCE", "OPS", "TREASURY"]).default("OPS"),
+    role: z.enum(["SUPER_ADMIN", "ADMIN", "COMPLIANCE", "OPS", "TREASURY"]).default("OPS"),
   });
 
   const data = registerSchema.parse(req.body);
