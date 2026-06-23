@@ -11,6 +11,7 @@
     "db:push": "prisma db push",
     "db:migrate": "prisma migrate dev",
     "db:seed": "tsx prisma/seed.ts",
+    "db:upsert-treasury": "tsx prisma/upsert-treasury.ts",
     "sync": "powershell -NoProfile -File ../sync-to-rail.ps1",
     "sync:push": "powershell -NoProfile -File ../sync-to-rail.ps1 -Push"
   },
