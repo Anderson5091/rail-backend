@@ -4,6 +4,7 @@ import { authenticate, AuthRequest, requireRole } from "../../middleware/auth";
 import { TreasuryOrchestrator } from "./treasury.orchestrator";
 import { treasuryRefillService } from "./treasury-refill.service";
 import { crossmintService } from "../../services/crossmint.service";
+import type { Chain } from "@crossmint/wallets-sdk";
 
 const router = Router();
 const orchestrator = new TreasuryOrchestrator();
@@ -21,16 +22,14 @@ router.get("/overview", authenticate, async (_req: AuthRequest, res: Response) =
 
   const results = await Promise.allSettled(
     wallets.map(async (wallet: { id: string; walletLocator: string | null; address: string; chain: string; walletType: string; network: string }) => {
-      // Use walletLocator if available, otherwise fall back to the blockchain address (also a valid Crossmint locator)
       const locator = wallet.walletLocator || wallet.address;
       if (!locator) return { key: `${wallet.walletType}_${wallet.network}`, balance: 0 };
 
-      const chain = wallet.chain as "base" | "ethereum" | "polygon" | "solana";
+      const chain = wallet.chain as Chain;
       try {
         const balances = await crossmintService.getWalletBalance(locator, ["usdc", "usdt", "usdxm"], chain);
         const bal = extractBalance(balances, "usdc") || extractBalance(balances, "usdt") || extractBalance(balances, "usdxm") || 0;
 
-        // Persist the synced balance back to DB so dashboard totals stay accurate
         if (bal > 0) {
           await prisma.treasuryWallet.update({ where: { id: wallet.id }, data: { balance: bal, lastSync: new Date() } });
         }
@@ -104,7 +103,7 @@ router.get("/crossmint-balances", authenticate, requireRole("SUPER_ADMIN", "TREA
 
   const results = await Promise.allSettled(
     wallets.map(async (wallet: { walletLocator: string; chain: string; walletType: string; network: string; address: string }) => {
-      const chain = wallet.chain as "base" | "ethereum" | "polygon" | "solana";
+      const chain = wallet.chain as Chain;
       const bal = await crossmintService.getWalletBalance(wallet.walletLocator, ["usdc", "usdt", "usdxm"], chain);
       return {
         key: `${wallet.walletType}_${wallet.network}`,
