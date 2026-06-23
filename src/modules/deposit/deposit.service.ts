@@ -64,7 +64,10 @@ export class DepositService {
     const now = Date.now();
     await prisma.depositWallet.update({
       where: { id: depositWallet.id },
-      data: { expiresAt: new Date(now + 5 * 60 * 1000) },
+      data: { 
+        expiresAt: new Date(now + 5 * 60 * 1000),
+        status: "CREATED"
+      },
     });
 
     const internalWallet = await prisma.wallet.findFirst({
@@ -132,6 +135,7 @@ export class DepositService {
           walletId: internalWallet.id,
           type: "DEPOSIT",
           status: "PENDING",
+          txHash: depositRequest.id,
         },
         data: { txHash, status: "DETECTED" },
       });
@@ -236,6 +240,7 @@ export class DepositService {
         walletId: wallet.id,
         type: "DEPOSIT",
         status: { in: ["PENDING", "DETECTED"] },
+        txHash: depositRequest.txHash ?? depositRequest.id,
       },
       data: {
         amount: depositRequest.netAmount,

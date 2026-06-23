@@ -17,8 +17,11 @@ export class SweepService {
       });
 
       await prisma.depositRequest.updateMany({
-        where: { depositWalletId: wallet.id, status: "PENDING" },
-        data: { status: "EXPIRED" },
+        where: { 
+          depositWalletId: wallet.id, 
+          status: { in: ["PENDING", "WALLET_CREATED"] } 
+        },
+        data: { status: "FAILED" },
       });
 
       logger.info(`[Sweep] Expired deposit wallet ${wallet.id}`);
