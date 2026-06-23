@@ -9,7 +9,7 @@ const router = Router();
 router.get("/dashboard", authenticate, requireRole("SUPER_ADMIN", "ADMIN", "COMPLIANCE", "TREASURY", "OPS"), async (_req: AuthRequest, res: Response) => {
   const [totalUsers, activeUsers, totalTransfers, pendingKyc, totalVolume, failedPayouts, openCases, fraudAlerts, alerts, recentActivity] = await Promise.all([
     prisma.user.count(),
-    prisma.user.count({ where: { wallets: { some: { status: "ACTIVE" } } } }),
+    prisma.user.count({ where: { wallets: { status: "ACTIVE" } } }),
     prisma.transfer.count(),
     prisma.kycProfile.count({ where: { status: "PENDING" } }),
     prisma.treasuryWallet.aggregate({ _sum: { balance: true } }),
