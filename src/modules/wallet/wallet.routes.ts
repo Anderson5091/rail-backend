@@ -81,7 +81,7 @@ router.get("/", authenticate, async (req: AuthRequest, res: Response) => {
     where: {
       walletId: wallet.id,
       type: { in: ["TRANSFER", "WITHDRAWAL"] },
-      status: { not: "COMPLETED" },
+      status: { in: ["PENDING", "DETECTED"] },
     },
     _sum: { amount: true },
   });

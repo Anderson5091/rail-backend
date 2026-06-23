@@ -21,15 +21,23 @@ router.get("/status", authenticate, async (req: AuthRequest, res: Response) => {
 });
 
 router.post("/upload", authenticate, async (req: AuthRequest, res: Response) => {
-  const { documentType } = req.body;
+  const { documentType, fileUrl } = req.body;
 
   const doc = await prisma.kycDocument.create({
     data: {
       userId: req.userId!,
       documentType,
+      fileUrl: fileUrl || null,
       status: "PENDING",
     },
   });
+
+  if (documentType === "SELFIE" && fileUrl) {
+    await prisma.kycProfile.update({
+      where: { userId: req.userId! },
+      data: { selfieUrl: fileUrl },
+    });
+  }
 
   res.status(201).json(doc);
 });

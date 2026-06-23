@@ -76,6 +76,18 @@ export class PayoutOrchestrator {
         },
       });
 
+      if (response.status === "SUCCESS") {
+        await prisma.walletTransaction.updateMany({
+          where: { payoutOrderId: order.id },
+          data: { status: "COMPLETED" },
+        });
+
+        await prisma.transfer.update({
+          where: { id: transfer.id },
+          data: { status: "COMPLETED" },
+        });
+      }
+
       return { ...order, partner: routing.partner.name, externalReference: response.externalReference };
     } catch (error) {
       logger.error(`[PAYOUT] Payout failed for transfer ${transfer.id}`, error);

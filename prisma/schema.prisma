@@ -280,6 +280,7 @@ model KycProfile {
   country     String?
   dateOfBirth String?
   address     String?
+  selfieUrl   String?
   createdAt   DateTime @default(now())
   user        User     @relation(fields: [userId], references: [id])
 }
