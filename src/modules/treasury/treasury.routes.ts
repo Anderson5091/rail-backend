@@ -20,20 +20,32 @@ router.get("/overview", authenticate, async (_req: AuthRequest, res: Response) =
   });
 
   const results = await Promise.allSettled(
-    wallets
-      .filter((w: { walletLocator: string | null }) => w.walletLocator)
-      .map(async (wallet: { walletLocator: string; chain: string; walletType: string; network: string }) => {
-        const chain = wallet.chain as "base" | "ethereum" | "polygon" | "solana";
-        const balances = await crossmintService.getWalletBalance(wallet.walletLocator, ["usdc", "usdt", "usdxm"], chain);
-        return { key: `${wallet.walletType}_${wallet.network}`, balances };
-      })
+    wallets.map(async (wallet: { id: string; walletLocator: string | null; address: string; chain: string; walletType: string; network: string }) => {
+      // Use walletLocator if available, otherwise fall back to the blockchain address (also a valid Crossmint locator)
+      const locator = wallet.walletLocator || wallet.address;
+      if (!locator) return { key: `${wallet.walletType}_${wallet.network}`, balance: 0 };
+
+      const chain = wallet.chain as "base" | "ethereum" | "polygon" | "solana";
+      try {
+        const balances = await crossmintService.getWalletBalance(locator, ["usdc", "usdt", "usdxm"], chain);
+        const bal = extractBalance(balances, "usdc") || extractBalance(balances, "usdt") || extractBalance(balances, "usdxm") || 0;
+
+        // Persist the synced balance back to DB so dashboard totals stay accurate
+        if (bal > 0) {
+          await prisma.treasuryWallet.update({ where: { id: wallet.id }, data: { balance: bal, lastSync: new Date() } });
+        }
+
+        return { key: `${wallet.walletType}_${wallet.network}`, balance: bal };
+      } catch {
+        return { key: `${wallet.walletType}_${wallet.network}`, balance: Number((wallet as any).balance) || 0 };
+      }
+    })
   );
 
   const onChainBalances: Record<string, number> = {};
   for (const result of results) {
     if (result.status === "fulfilled") {
-      const bal = extractBalance(result.value.balances, "usdc") || extractBalance(result.value.balances, "usdt") || extractBalance(result.value.balances, "usdxm") || 0;
-      onChainBalances[result.value.key] = bal;
+      onChainBalances[result.value.key] = result.value.balance;
     }
   }
 
@@ -55,6 +67,7 @@ router.get("/overview", authenticate, async (_req: AuthRequest, res: Response) =
   const networks = [...new Set(wallets.map((w: { network: string }) => w.network))];
 
   res.json({ totalLiquidity, hotTotal, warmTotal, coldTotal, networks, wallets: walletsWithBalance, recentMovements: movements, snapshots });
+
 });
 
 router.get("/liquidity", authenticate, async (_req: AuthRequest, res: Response) => {
