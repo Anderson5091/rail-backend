@@ -1,4 +1,4 @@
-import { createCrossmint, CrossmintWallets, WalletsApiClient } from "@crossmint/wallets-sdk";
+import { createCrossmint, CrossmintWallets } from "@crossmint/wallets-sdk";
 import type { Chain } from "@crossmint/wallets-sdk";
 import { ENV } from "../config/env";
 import { logger } from "../utils/logger";
@@ -124,44 +124,11 @@ class CrossmintService {
     chain?: ChainType
   ) {
     await this.ensureInitialized();
-    const resolvedChain = chain || ("base" as ChainType);
-    try {
-      const wallet = await this.walletsSdk.getWallet(locator, {
-        chain: resolvedChain,
-      });
-      return await wallet.balances(tokens);
-    } catch {
-      return await this.fetchBalanceDirect(locator, tokens, resolvedChain);
-    }
-  }
-
-  private async fetchBalanceDirect(locator: string, tokens: string[], chain: ChainType) {
-    const apiClient = new WalletsApiClient(this.client);
-    const nativeSymbol = chain.includes("sol") ? "sol" : "eth";
-    const allTokens = [nativeSymbol, "usdc", ...tokens.filter(t => t !== nativeSymbol && t !== "usdc")];
-
-    const rawBalances = await apiClient.getBalance(locator, {
-      chains: [chain],
-      tokens: allTokens,
-    }) as any;
-
-    if (!Array.isArray(rawBalances)) {
-      throw new Error("Failed to fetch balance");
-    }
-
-    return this.transformBalanceResponse(rawBalances, nativeSymbol);
-  }
-
-  private transformBalanceResponse(raw: any[], nativeSymbol: string) {
-    const native = raw.find((t: any) => t.symbol === nativeSymbol);
-    const usdc = raw.find((t: any) => t.symbol === "usdc");
-    const otherTokens = raw.filter((t: any) => t.symbol !== nativeSymbol && t.symbol !== "usdc");
-
-    return {
-      nativeToken: native ?? { symbol: nativeSymbol, amount: "0" },
-      usdc: usdc ?? { symbol: "usdc", amount: "0" },
-      tokens: otherTokens,
-    };
+    const wallet = await this.walletsSdk.getWallet(locator, {
+      chain: chain || ("base" as ChainType),
+    });
+    const balances = await wallet.balances(tokens);
+    return balances;
   }
 
   private async ensureInitialized() {
