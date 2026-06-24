@@ -7,7 +7,7 @@ import { ledgerService } from "../ledger/ledger.service";
 const router = Router();
 
 router.get("/dashboard", authenticate, requireRole("SUPER_ADMIN", "ADMIN", "COMPLIANCE", "TREASURY", "OPS"), async (_req: AuthRequest, res: Response) => {
-  const [totalUsers, activeUsers, totalTransfers, pendingKyc, totalVolume, failedPayouts, openCases, fraudAlerts, alerts, recentActivity] = await Promise.all([
+  const [totalUsers, activeUsers, totalTransfers, pendingKyc, totalVolume, failedPayouts, openCases, fraudAlerts, partnerAgents, internalAgents, alerts, recentActivity] = await Promise.all([
     prisma.user.count(),
     prisma.user.count({ where: { wallets: { status: "ACTIVE" } } }),
     prisma.transfer.count(),
@@ -16,6 +16,8 @@ router.get("/dashboard", authenticate, requireRole("SUPER_ADMIN", "ADMIN", "COMP
     prisma.payoutOrder.count({ where: { status: "FAILED" } }),
     prisma.complianceCase.count({ where: { status: { in: ["OPEN", "INVESTIGATING"] } } }),
     prisma.systemAlert.count({ where: { severity: { in: ["CRITICAL", "HIGH"] }, status: "OPEN" } }),
+    prisma.agent.count({ where: { type: "PARTNER" } }),
+    prisma.agent.count({ where: { type: "INTERNAL" } }),
     prisma.systemAlert.findMany({ where: { status: "OPEN" }, orderBy: { createdAt: "desc" }, take: 10 }),
     prisma.adminActionLog.findMany({ orderBy: { createdAt: "desc" }, take: 10 }),
   ]);
@@ -29,6 +31,9 @@ router.get("/dashboard", authenticate, requireRole("SUPER_ADMIN", "ADMIN", "COMP
     failedPayouts,
     openCases,
     fraudAlerts,
+    totalAgents: partnerAgents + internalAgents,
+    partnerAgents,
+    internalAgents,
     alerts: alerts.map((a: { id: string; severity: string; message: string | null; createdAt: Date }) => ({
       id: a.id,
       severity: a.severity as "CRITICAL" | "HIGH" | "MEDIUM" | "LOW",
