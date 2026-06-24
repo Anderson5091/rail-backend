@@ -37,34 +37,13 @@ router.post("/create", authenticate, requireRole("SUPER_ADMIN", "OPS"), async (r
   const chain = "base";
 
   if (type === "PARTNER") {
-    await prisma.agentWallet.createMany({
-      data: [
-        {
-          agentId: agent.id,
-          walletType: "BASE_TREASURY",
-          network,
-          chain,
-          address: `agent_base_treasury_${agent.id}`,
-          balance: 0,
-        },
-        {
-          agentId: agent.id,
-          walletType: "COMMISSION",
-          network,
-          chain,
-          address: `agent_commission_${agent.id}`,
-          balance: 0,
-        },
-      ],
-    });
-  } else {
     await prisma.agentWallet.create({
       data: {
         agentId: agent.id,
-        walletType: "COMMISSION",
+        walletType: "BASE_TREASURY",
         network,
         chain,
-        address: `agent_commission_${agent.id}`,
+        address: `agent_base_treasury_${agent.id}`,
         balance: 0,
       },
     });
@@ -109,7 +88,6 @@ router.get("/list", authenticate, requireRole("SUPER_ADMIN", "OPS", "TREASURY"),
       totalRewards: Number(a.totalRewards),
       totalTransactions: a._count.transactions,
       baseTreasuryBalance: Number(a.wallets.find((w: { walletType: string }) => w.walletType === "BASE_TREASURY")?.balance ?? 0),
-      commissionBalance: Number(a.wallets.find((w: { walletType: string }) => w.walletType === "COMMISSION")?.balance ?? 0),
       commissionLedgerBalance: Number(a.commissionLedger),
       createdAt: a.createdAt,
     }))

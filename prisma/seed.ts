@@ -38,7 +38,6 @@ const AGENTS = [
     type: "PARTNER",
     wallets: [
       { walletType: "BASE_TREASURY", balance: 100000 },
-      { walletType: "COMMISSION", balance: 5000 },
     ],
   },
   {
@@ -46,9 +45,7 @@ const AGENTS = [
     password: "internal123",
     fullName: "Jane Internal",
     type: "INTERNAL",
-    wallets: [
-      { walletType: "COMMISSION", balance: 2500 },
-    ],
+    wallets: [],
   },
 ];
 

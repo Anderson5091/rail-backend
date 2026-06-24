@@ -302,35 +302,33 @@ export class AgentService {
       throw new Error("Commission balance must be at least $10 to withdraw");
     }
 
-    const commWallet = (agent.wallets as AgentWalletRow[]).find((w) => w.walletType === "COMMISSION");
-    if (!commWallet) throw new Error("Commission wallet not found");
-
-    const withdrawAmount = ledgerBalance;
+    const baseWallet = (agent.wallets as AgentWalletRow[]).find((w) => w.walletType === "BASE_TREASURY");
+    if (!baseWallet) throw new Error("Base treasury wallet not found");
 
     await prisma.agent.update({
       where: { id: agentId },
-      data: { commissionLedger: { decrement: withdrawAmount } },
+      data: { commissionLedger: { decrement: ledgerBalance } },
     });
 
     await prisma.agentWallet.update({
-      where: { id: commWallet.id },
-      data: { balance: { increment: withdrawAmount } },
+      where: { id: baseWallet.id },
+      data: { balance: { increment: ledgerBalance } },
     });
 
     const tx = await prisma.agentTransaction.create({
       data: {
         agentId,
         type: "COMMISSION",
-        amount: withdrawAmount,
+        amount: ledgerBalance,
         commission: 0,
-        netAmount: withdrawAmount,
+        netAmount: ledgerBalance,
         status: "COMPLETED",
         reference: `comm_wd_${agentId}_${Date.now()}`,
         metadata: { fromLedger: true },
       },
     });
 
-    logger.info(`[Agent] Agent ${agentId} withdrew ${withdrawAmount} USDT from commission ledger to wallet`);
+    logger.info(`[Agent] Agent ${agentId} withdrew ${ledgerBalance} USDT from commission ledger to base wallet`);
     return tx;
   }
 
@@ -371,7 +369,6 @@ export class AgentService {
     const agentTransactions = agent.transactions as AgentTransactionRow[];
 
     const baseWallet = agentWallets.find((w) => w.walletType === "BASE_TREASURY");
-    const commWallet = agentWallets.find((w) => w.walletType === "COMMISSION");
 
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -387,7 +384,6 @@ export class AgentService {
       totalRewards: Number(agent.totalRewards),
       commissionLedgerBalance: Number(agent.commissionLedger),
       baseTreasuryBalance: baseWallet ? Number(baseWallet.balance) : null,
-      commissionBalance: commWallet ? Number(commWallet.balance) : null,
       todayVolume: todayTx.reduce((sum: number, t: AgentTransactionRow) => sum + Number(t.amount), 0),
       todayCommission: todayTx.reduce((sum: number, t: AgentTransactionRow) => sum + Number(t.commission), 0),
       todayTxCount: todayTx.length,
