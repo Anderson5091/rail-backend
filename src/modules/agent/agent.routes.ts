@@ -143,6 +143,16 @@ router.post("/:id/toggle-status", authenticate, requireRole("SUPER_ADMIN"), asyn
   res.json({ status: newStatus });
 });
 
+router.post("/:id/upgrade-wallet", authenticate, requireRole("SUPER_ADMIN", "OPS"), async (req: AuthRequest, res: Response) => {
+  try {
+    const result = await agentService.upgradeAgentWallet(String(req.params.id));
+    res.json(result);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "Upgrade failed";
+    res.status(400).json({ error: message });
+  }
+});
+
 router.post("/:id/add-balance", authenticate, requireRole("AGENT_PARTNER", "AGENT_INTERNAL"), async (req: AuthRequest, res: Response) => {
   const { userId, fiatAmount, usdtAmount, commissionPercent } = req.body;
   if (!userId || !fiatAmount || !usdtAmount) {

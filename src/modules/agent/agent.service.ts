@@ -574,10 +574,39 @@ export class AgentService {
         id: w.id,
         walletType: w.walletType,
         network: w.network,
-        address: w.address,
         balance: Number(w.balance),
       })),
     };
+  }
+
+  async upgradeAgentWallet(agentId: string) {
+    const agent = await prisma.agent.findUnique({
+      where: { id: agentId },
+      include: { wallets: true },
+    });
+    if (!agent) throw new Error("Agent not found");
+
+    const currentWallet = (agent.wallets as AgentWalletRow[]).find((w) => w.walletType === "BASE_TREASURY");
+    if (!currentWallet) throw new Error("Agent has no BASE_TREASURY wallet");
+
+    if (!currentWallet.address.startsWith("agent_base_treasury_")) {
+      return { upgraded: false, message: "Agent already has a real wallet", address: currentWallet.address };
+    }
+
+    const { crossmintService } = await import("../../services/crossmint.service");
+    const crossmintWallet = await crossmintService.createWallet("base", "AGENT", agent.id, `agent_${agent.id}`);
+
+    await prisma.agentWallet.update({
+      where: { id: currentWallet.id },
+      data: {
+        address: crossmintWallet.address,
+        crossmintWalletId: crossmintWallet.crossmintWalletId,
+        walletLocator: crossmintWallet.walletLocator,
+      },
+    });
+
+    logger.info(`[Agent] Upgraded wallet for agent ${agentId}: ${crossmintWallet.address}`);
+    return { upgraded: true, message: "Wallet upgraded to real Crossmint wallet" };
   }
 
   async recordKpi(agentId: string, volume: number, commission: number) {
