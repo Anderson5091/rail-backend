@@ -498,6 +498,7 @@ export class AgentService {
     const agentTransactions = agent.transactions as AgentTransactionRow[];
 
     const baseWallet = agentWallets.find((w) => w.walletType === "BASE_TREASURY");
+    const commWallet = agentWallets.find((w) => w.walletType === "COMMISSION");
 
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -512,6 +513,7 @@ export class AgentService {
       kpiRating: agent.kpiRating,
       totalRewards: Number(agent.totalRewards),
       commissionLedgerBalance: Number(agent.commissionLedger),
+      commissionWalletBalance: commWallet ? Number(commWallet.balance) : null,
       baseTreasuryBalance: baseWallet ? Number(baseWallet.balance) : null,
       todayVolume: todayTx.reduce((sum: number, t: AgentTransactionRow) => sum + Number(t.amount), 0),
       todayCommission: todayTx.reduce((sum: number, t: AgentTransactionRow) => sum + Number(t.commission), 0),
