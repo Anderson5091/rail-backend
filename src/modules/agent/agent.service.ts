@@ -97,13 +97,6 @@ export class AgentService {
     }
 
     if (commission > 0) {
-      const commWallet = (agent.wallets as AgentWalletRow[]).find((w) => w.walletType === "COMMISSION");
-      if (commWallet) {
-        await prisma.agentWallet.update({
-          where: { id: commWallet.id },
-          data: { balance: { increment: commission } },
-        });
-      }
       await prisma.agent.update({
         where: { id: agentId },
         data: { commissionLedger: { increment: commission } },
@@ -301,13 +294,6 @@ export class AgentService {
     }
 
     if (commission > 0) {
-      const commWallet = (agent.wallets as AgentWalletRow[]).find((w) => w.walletType === "COMMISSION");
-      if (commWallet) {
-        await prisma.agentWallet.update({
-          where: { id: commWallet.id },
-          data: { balance: { increment: commission } },
-        });
-      }
       await prisma.agent.update({
         where: { id: agentId },
         data: { commissionLedger: { increment: commission } },
@@ -580,62 +566,59 @@ export class AgentService {
 
     const agentWallets = agent.wallets as AgentWalletRow[];
     const results: string[] = [];
-    const walletTypes = ["BASE_TREASURY", "COMMISSION"] as const;
+    const walletType = "BASE_TREASURY";
+    const existing = agentWallets.find((w) => w.walletType === walletType);
 
-    for (const walletType of walletTypes) {
-      const existing = agentWallets.find((w) => w.walletType === walletType);
-
-      if (!existing) {
-        try {
-          const alias = `agent_${walletType}_${agent.id}`;
-          const { crossmintService } = await import("../../services/crossmint.service");
-          const cw = await crossmintService.createWallet("base", "AGENT", agent.id, alias);
-          await prisma.agentWallet.create({
-            data: {
-              agentId,
-              walletType,
-              network: "BASE",
-              chain: "base",
-              address: cw.address,
-              crossmintWalletId: cw.crossmintWalletId,
-              walletLocator: cw.walletLocator,
-              balance: 0,
-            },
-          });
-          results.push(`${walletType}: created (${cw.address})`);
-        } catch {
-          await prisma.agentWallet.create({
-            data: {
-              agentId,
-              walletType,
-              network: "BASE",
-              chain: "base",
-              address: `${walletType}_${agent.id}`,
-              balance: 0,
-            },
-          });
-          results.push(`${walletType}: created (dummy)`);
-        }
-      } else if (existing.address.startsWith("agent_base_treasury_") || existing.address.startsWith("COMMISSION_")) {
-        try {
-          const alias = `agent_${walletType}_${agent.id}`;
-          const { crossmintService } = await import("../../services/crossmint.service");
-          const cw = await crossmintService.createWallet("base", "AGENT", agent.id, alias);
-          await prisma.agentWallet.update({
-            where: { id: existing.id },
-            data: {
-              address: cw.address,
-              crossmintWalletId: cw.crossmintWalletId,
-              walletLocator: cw.walletLocator,
-            },
-          });
-          results.push(`${walletType}: upgraded (${cw.address})`);
-        } catch {
-          results.push(`${walletType}: upgrade failed, keeping existing`);
-        }
-      } else {
-        results.push(`${walletType}: already real`);
+    if (!existing) {
+      try {
+        const alias = `agent_wallet_${agent.id}`;
+        const { crossmintService } = await import("../../services/crossmint.service");
+        const cw = await crossmintService.createWallet("base", "AGENT", agent.id, alias);
+        await prisma.agentWallet.create({
+          data: {
+            agentId,
+            walletType,
+            network: "BASE",
+            chain: "base",
+            address: cw.address,
+            crossmintWalletId: cw.crossmintWalletId,
+            walletLocator: cw.walletLocator,
+            balance: 0,
+          },
+        });
+        results.push(`${walletType}: created (${cw.address})`);
+      } catch {
+        await prisma.agentWallet.create({
+          data: {
+            agentId,
+            walletType,
+            network: "BASE",
+            chain: "base",
+            address: `wallet_${agent.id}`,
+            balance: 0,
+          },
+        });
+        results.push(`${walletType}: created (dummy)`);
       }
+    } else if (existing.address.startsWith("agent_base_treasury_") || existing.address.startsWith("wallet_")) {
+      try {
+        const alias = `agent_wallet_${agent.id}`;
+        const { crossmintService } = await import("../../services/crossmint.service");
+        const cw = await crossmintService.createWallet("base", "AGENT", agent.id, alias);
+        await prisma.agentWallet.update({
+          where: { id: existing.id },
+          data: {
+            address: cw.address,
+            crossmintWalletId: cw.crossmintWalletId,
+            walletLocator: cw.walletLocator,
+          },
+        });
+        results.push(`${walletType}: upgraded (${cw.address})`);
+      } catch {
+        results.push(`${walletType}: upgrade failed, keeping existing`);
+      }
+    } else {
+      results.push(`${walletType}: already real`);
     }
 
     return { upgraded: true, results };

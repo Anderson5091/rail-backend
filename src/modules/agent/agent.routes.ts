@@ -41,36 +41,33 @@ router.post("/create", authenticate, requireRole("SUPER_ADMIN", "OPS"), async (r
   const network = "BASE";
   const chain = "base" as ChainType;
 
-  const walletTypes = ["BASE_TREASURY", "COMMISSION"] as const;
-  for (const walletType of walletTypes) {
-    try {
-      const alias = `agent_${walletType}_${agent.id}`;
-      const crossmintWallet = await crossmintService.createWallet(chain, "AGENT", agent.id, alias);
+  try {
+    const alias = `agent_wallet_${agent.id}`;
+    const crossmintWallet = await crossmintService.createWallet(chain, "AGENT", agent.id, alias);
 
-      await prisma.agentWallet.create({
-        data: {
-          agentId: agent.id,
-          walletType,
-          network,
-          chain,
-          address: crossmintWallet.address,
-          crossmintWalletId: crossmintWallet.crossmintWalletId,
-          walletLocator: crossmintWallet.walletLocator,
-          balance: 0,
-        },
-      });
-    } catch (error) {
-      await prisma.agentWallet.create({
-        data: {
-          agentId: agent.id,
-          walletType,
-          network,
-          chain,
-          address: `${walletType}_${agent.id}`,
-          balance: 0,
-        },
-      });
-    }
+    await prisma.agentWallet.create({
+      data: {
+        agentId: agent.id,
+        walletType: "BASE_TREASURY",
+        network,
+        chain,
+        address: crossmintWallet.address,
+        crossmintWalletId: crossmintWallet.crossmintWalletId,
+        walletLocator: crossmintWallet.walletLocator,
+        balance: 0,
+      },
+    });
+  } catch (error) {
+    await prisma.agentWallet.create({
+      data: {
+        agentId: agent.id,
+        walletType: "BASE_TREASURY",
+        network,
+        chain,
+        address: `wallet_${agent.id}`,
+        balance: 0,
+      },
+    });
   }
 
   await prisma.adminActionLog.create({
