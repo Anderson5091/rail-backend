@@ -86,6 +86,11 @@ router.post("/create", authenticate, requireRole("SUPER_ADMIN", "OPS"), async (r
     fullName: agent.fullName,
     type: agent.type,
     status: agent.status,
+    walletBalance: 0,
+    commissionLedgerBalance: 0,
+    totalTransactions: 0,
+    kpiRating: null,
+    createdAt: agent.createdAt,
   });
 });
 
