@@ -407,7 +407,7 @@ export class AgentService {
     };
   }
 
-  private async recordKpi(agentId: string, volume: number, commission: number) {
+  async recordKpi(agentId: string, volume: number, commission: number) {
     const now = new Date();
     const periods = this.getKpiPeriods(now);
 

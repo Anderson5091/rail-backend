@@ -4,9 +4,12 @@ import { prisma } from "../../config/database";
 import { authenticate, AuthRequest, requireRole } from "../../middleware/auth";
 import { agentService } from "./agent.service";
 import { crossmintService } from "../../services/crossmint.service";
+import { PayoutOrchestrator } from "../payout/payout.orchestrator";
+import { ledgerService } from "../ledger/ledger.service";
 import type { ChainType } from "../../services/crossmint.service";
 
 const router = Router();
+const payoutOrchestrator = new PayoutOrchestrator();
 
 router.post("/create", authenticate, requireRole("SUPER_ADMIN", "OPS"), async (req: AuthRequest, res: Response) => {
   const { email, password, fullName, phone, type } = req.body;
@@ -200,6 +203,91 @@ router.post("/topup-partner", authenticate, requireRole("AGENT_INTERNAL"), async
     usdtAmount
   );
   res.json(result);
+});
+
+router.post("/:id/process-payout", authenticate, requireRole("AGENT_PARTNER", "AGENT_INTERNAL"), async (req: AuthRequest, res: Response) => {
+  const { userId, amount, payoutMethod, beneficiaryId, commissionPercent } = req.body;
+  if (!userId || !amount || !payoutMethod) {
+    return res.status(400).json({ error: "userId, amount, and payoutMethod are required" });
+  }
+
+  const agentId = String(req.params.id);
+  const agent = await prisma.agent.findUnique({ where: { id: agentId } });
+  if (!agent) return res.status(404).json({ error: "Agent not found" });
+
+  const wallet = await prisma.wallet.findFirst({ where: { userId } });
+  if (!wallet) return res.status(400).json({ error: "User wallet not found" });
+
+  const balance = await ledgerService.getBalance(wallet.id);
+  if (balance < Number(amount)) return res.status(400).json({ error: "Insufficient user balance" });
+
+  const commission = (Number(amount) * Number(commissionPercent || 0)) / 100;
+  const netAmount = Number(amount) - commission;
+
+  await ledgerService.debit(wallet.id, Number(amount), `agent_payout_${agentId}_${Date.now()}`);
+
+  if (commission > 0) {
+    await prisma.agent.update({
+      where: { id: agentId },
+      data: { commissionLedger: { increment: commission } },
+    });
+  }
+
+  const transfer = await prisma.transfer.create({
+    data: {
+      userId,
+      beneficiaryId: beneficiaryId || null,
+      amount: netAmount,
+      payoutMethod,
+      status: "PENDING_PAYOUT",
+      referenceId: `ap_${agentId}_${Date.now()}`,
+    },
+  });
+
+  const payoutOrder = await prisma.payoutOrder.create({
+    data: {
+      transferId: transfer.id,
+      payoutMethod,
+      status: "PENDING",
+    },
+  });
+
+  await prisma.transfer.update({
+    where: { id: transfer.id },
+    data: { payoutOrderId: payoutOrder.id },
+  });
+
+  await prisma.walletTransaction.create({
+    data: {
+      walletId: wallet.id,
+      type: "AGENT_PAYOUT",
+      amount: netAmount,
+      status: "PENDING",
+      payoutOrderId: payoutOrder.id,
+    },
+  });
+
+  const agentTx = await prisma.agentTransaction.create({
+    data: {
+      agentId,
+      type: "PAYOUT",
+      amount: Number(amount),
+      commission,
+      netAmount,
+      userRef: userId,
+      status: "COMPLETED",
+      reference: `ap_${agentId}_${Date.now()}`,
+      metadata: { payoutMethod, beneficiaryId },
+    },
+  });
+
+  await agentService.recordKpi(agentId, Number(amount), commission);
+
+  payoutOrchestrator.execute({ id: transfer.id, payoutMethod, amount: netAmount, beneficiaryId }).catch((err) => {
+    console.error(`[AGENT_PAYOUT] Auto-payout failed for transfer ${transfer.id}:`, err.message);
+  });
+
+  res.json(agentTx);
 });
 
 router.post("/:id/withdraw-commission", authenticate, requireRole("AGENT_PARTNER", "AGENT_INTERNAL"), async (req: AuthRequest, res: Response) => {
