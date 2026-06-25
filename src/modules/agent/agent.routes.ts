@@ -3,6 +3,8 @@ import bcrypt from "bcryptjs";
 import { prisma } from "../../config/database";
 import { authenticate, AuthRequest, requireRole } from "../../middleware/auth";
 import { agentService } from "./agent.service";
+import { crossmintService } from "../../services/crossmint.service";
+import type { ChainType } from "../../services/crossmint.service";
 
 const router = Router();
 
@@ -34,18 +36,35 @@ router.post("/create", authenticate, requireRole("SUPER_ADMIN", "OPS"), async (r
   });
 
   const network = "BASE";
-  const chain = "base";
+  const chain = "base" as ChainType;
 
-  await prisma.agentWallet.create({
-    data: {
-      agentId: agent.id,
-      walletType: "BASE_TREASURY",
-      network,
-      chain,
-      address: `agent_base_treasury_${agent.id}`,
-      balance: 0,
-    },
-  });
+  try {
+    const crossmintWallet = await crossmintService.createWallet(chain, "AGENT", agent.id, `agent_${agent.id}`);
+
+    await prisma.agentWallet.create({
+      data: {
+        agentId: agent.id,
+        walletType: "BASE_TREASURY",
+        network,
+        chain,
+        address: crossmintWallet.address,
+        crossmintWalletId: crossmintWallet.crossmintWalletId,
+        walletLocator: crossmintWallet.walletLocator,
+        balance: 0,
+      },
+    });
+  } catch (error) {
+    await prisma.agentWallet.create({
+      data: {
+        agentId: agent.id,
+        walletType: "BASE_TREASURY",
+        network,
+        chain,
+        address: `agent_base_treasury_${agent.id}`,
+        balance: 0,
+      },
+    });
+  }
 
   await prisma.adminActionLog.create({
     data: {
@@ -193,13 +212,18 @@ router.post("/:id/withdraw-commission", authenticate, requireRole("AGENT_PARTNER
   }
 });
 
-router.get("/:id/kpi", authenticate, async (req: AuthRequest, res: Response) => {
+router.get("/kpi/:id/", authenticate, async (req: AuthRequest, res: Response) => {
   const { period } = req.query;
   const kpi = await agentService.getAgentKpi(
     String(req.params.id),
     period as string | undefined
   );
   res.json(kpi);
+});
+
+router.get("/me/dashboard", authenticate, async (req: AuthRequest, res: Response) => {
+  const dashboard = await agentService.getAgentDashboard(req.userId!);
+  res.json(dashboard);
 });
 
 router.get("/:id/transactions", authenticate, async (req: AuthRequest, res: Response) => {

@@ -404,4 +404,48 @@ router.delete("/admins/:id", authenticate, requireRole("SUPER_ADMIN"), async (re
   res.json({ success: true });
 });
 
+router.get("/transfers", authenticate, requireRole("SUPER_ADMIN", "ADMIN", "OPS"), async (_req: AuthRequest, res: Response) => {
+  const transfers = await prisma.transfer.findMany({
+    include: {
+      user: { select: { email: true, fullName: true } },
+      payoutOrder: { select: { status: true, externalReference: true, partner: true } },
+    },
+    orderBy: { createdAt: "desc" },
+    take: 200,
+  });
+
+  res.json(transfers.map((t: any) => ({
+    id: t.id,
+    userId: t.userId,
+    userEmail: t.user.email,
+    userName: t.user.fullName || t.user.email,
+    amount: Number(t.amount),
+    fee: Number(t.fee || 0),
+    destinationAmount: Number(t.destinationAmount || 0),
+    payoutMethod: t.payoutMethod,
+    status: t.status,
+    referenceId: t.referenceId,
+    partner: t.payoutOrder?.partner || null,
+    partnerStatus: t.payoutOrder?.status || null,
+    createdAt: t.createdAt,
+  })));
+});
+
+router.get("/audit-logs", authenticate, requireRole("SUPER_ADMIN", "ADMIN", "COMPLIANCE", "OPS"), async (_req: AuthRequest, res: Response) => {
+  const logs = await prisma.adminActionLog.findMany({
+    orderBy: { createdAt: "desc" },
+    take: 200,
+  });
+
+  res.json(logs.map((l: any) => ({
+    id: l.id,
+    adminId: l.adminId,
+    action: l.action,
+    entity: l.entity,
+    entityId: l.entityId,
+    metadata: l.metadata,
+    createdAt: l.createdAt,
+  })));
+});
+
 export { router as adminRoutes };

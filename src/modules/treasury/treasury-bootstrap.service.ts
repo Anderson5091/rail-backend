@@ -78,7 +78,7 @@ export class TreasuryBootstrapService {
     }
 
     try {
-      const created = await crossmintService.createWallet(REVENUE_CHAIN, "COLLECTION");
+      const created = await crossmintService.createWallet(REVENUE_CHAIN, "REVENUE");
 
       await prisma.treasuryWallet.create({
         data: {
