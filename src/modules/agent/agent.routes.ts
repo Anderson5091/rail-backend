@@ -238,7 +238,6 @@ router.post("/:id/transfer", authenticate, requireRole("AGENT_PARTNER", "AGENT_I
       commissionPercent: Number(commissionPercent || 0),
     });
 
-    const payoutOrchestrator = new PayoutOrchestrator();
     payoutOrchestrator.execute({
       id: result.transfer.id,
       payoutMethod,
