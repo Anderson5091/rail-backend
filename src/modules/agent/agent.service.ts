@@ -63,16 +63,38 @@ export class AgentService {
     const commission = (usdtAmount * commissionPercent) / 100;
     const netUsdt = usdtAmount - commission;
 
-    const baseWallet = (agent.wallets as AgentWalletRow[]).find((w) => w.walletType === "BASE_TREASURY");
-    if (!baseWallet) throw new Error("Agent base treasury wallet not found");
-    if (Number(baseWallet.balance) < usdtAmount) {
-      throw new Error("Insufficient agent treasury balance. Request top-up from internal agent.");
+    if (agent.type === "INTERNAL") {
+      const hotWallet = await prisma.treasuryWallet.findFirst({ where: { walletType: "HOT" } });
+      if (!hotWallet) throw new Error("System hot treasury not found");
+      if (Number(hotWallet.balance) < usdtAmount) {
+        throw new Error("Insufficient system treasury balance");
+      }
+      await prisma.treasuryWallet.update({
+        where: { id: hotWallet.id },
+        data: { balance: { decrement: usdtAmount } },
+      });
+      await prisma.treasuryMovement.create({
+        data: {
+          fromWallet: "HOT",
+          toWallet: "AGENT_ADD_BALANCE",
+          fromWalletId: hotWallet.id,
+          amount: usdtAmount,
+          network: hotWallet.network,
+          reason: `Internal agent ${agentId} addBalance user`,
+          status: "COMPLETED",
+        },
+      });
+    } else {
+      const baseWallet = (agent.wallets as AgentWalletRow[]).find((w) => w.walletType === "BASE_TREASURY");
+      if (!baseWallet) throw new Error("Agent base treasury wallet not found");
+      if (Number(baseWallet.balance) < usdtAmount) {
+        throw new Error("Insufficient agent treasury balance. Request top-up from internal agent.");
+      }
+      await prisma.agentWallet.update({
+        where: { id: baseWallet.id },
+        data: { balance: { decrement: usdtAmount } },
+      });
     }
-
-    await prisma.agentWallet.update({
-      where: { id: baseWallet.id },
-      data: { balance: { decrement: usdtAmount } },
-    });
 
     if (commission > 0) {
       const commWallet = (agent.wallets as AgentWalletRow[]).find((w) => w.walletType === "COMMISSION");
@@ -245,16 +267,38 @@ export class AgentService {
 
     let beneficiaryId = payload.beneficiaryId;
 
-    const baseWallet = (agent.wallets as AgentWalletRow[]).find((w) => w.walletType === "BASE_TREASURY");
-    if (!baseWallet) throw new Error("Agent base treasury wallet not found");
-    if (Number(baseWallet.balance) < payload.amount) {
-      throw new Error("Insufficient agent treasury balance. Request top-up from internal agent.");
+    if (agent.type === "INTERNAL") {
+      const hotWallet = await prisma.treasuryWallet.findFirst({ where: { walletType: "HOT" } });
+      if (!hotWallet) throw new Error("System hot treasury not found");
+      if (Number(hotWallet.balance) < payload.amount) {
+        throw new Error("Insufficient system treasury balance");
+      }
+      await prisma.treasuryWallet.update({
+        where: { id: hotWallet.id },
+        data: { balance: { decrement: payload.amount } },
+      });
+      await prisma.treasuryMovement.create({
+        data: {
+          fromWallet: "HOT",
+          toWallet: "AGENT_TRANSFER",
+          fromWalletId: hotWallet.id,
+          amount: payload.amount,
+          network: hotWallet.network,
+          reason: `Internal agent ${agentId} transfer to beneficiary`,
+          status: "COMPLETED",
+        },
+      });
+    } else {
+      const baseWallet = (agent.wallets as AgentWalletRow[]).find((w) => w.walletType === "BASE_TREASURY");
+      if (!baseWallet) throw new Error("Agent base treasury wallet not found");
+      if (Number(baseWallet.balance) < payload.amount) {
+        throw new Error("Insufficient agent treasury balance. Request top-up from internal agent.");
+      }
+      await prisma.agentWallet.update({
+        where: { id: baseWallet.id },
+        data: { balance: { decrement: payload.amount } },
+      });
     }
-
-    await prisma.agentWallet.update({
-      where: { id: baseWallet.id },
-      data: { balance: { decrement: payload.amount } },
-    });
 
     if (commission > 0) {
       const commWallet = (agent.wallets as AgentWalletRow[]).find((w) => w.walletType === "COMMISSION");
@@ -426,14 +470,6 @@ export class AgentService {
     const baseWallet = (agent.wallets as AgentWalletRow[]).find((w) => w.walletType === "BASE_TREASURY");
     if (!baseWallet) throw new Error("Base treasury wallet not found");
 
-    const commWallet = (agent.wallets as AgentWalletRow[]).find((w) => w.walletType === "COMMISSION");
-    if (commWallet) {
-      await prisma.agentWallet.update({
-        where: { id: commWallet.id },
-        data: { balance: { decrement: ledgerBalance } },
-      });
-    }
-
     await prisma.agent.update({
       where: { id: agentId },
       data: { commissionLedger: { decrement: ledgerBalance } },
@@ -453,7 +489,7 @@ export class AgentService {
         netAmount: ledgerBalance,
         status: "COMPLETED",
         reference: `comm_wd_${agentId}_${Date.now()}`,
-        metadata: { fromLedger: true, fromWallet: commWallet?.id, toWallet: baseWallet.id },
+        metadata: { fromLedger: true, toWallet: baseWallet.id },
       },
     });
 
@@ -498,7 +534,6 @@ export class AgentService {
     const agentTransactions = agent.transactions as AgentTransactionRow[];
 
     const baseWallet = agentWallets.find((w) => w.walletType === "BASE_TREASURY");
-    const commWallet = agentWallets.find((w) => w.walletType === "COMMISSION");
 
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -513,7 +548,6 @@ export class AgentService {
       kpiRating: agent.kpiRating,
       totalRewards: Number(agent.totalRewards),
       commissionLedgerBalance: Number(agent.commissionLedger),
-      commissionWalletBalance: commWallet ? Number(commWallet.balance) : null,
       baseTreasuryBalance: baseWallet ? Number(baseWallet.balance) : null,
       todayVolume: todayTx.reduce((sum: number, t: AgentTransactionRow) => sum + Number(t.amount), 0),
       todayCommission: todayTx.reduce((sum: number, t: AgentTransactionRow) => sum + Number(t.commission), 0),
