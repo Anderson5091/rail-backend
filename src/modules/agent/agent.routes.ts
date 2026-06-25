@@ -36,18 +36,16 @@ router.post("/create", authenticate, requireRole("SUPER_ADMIN", "OPS"), async (r
   const network = "BASE";
   const chain = "base";
 
-  if (type === "PARTNER") {
-    await prisma.agentWallet.create({
-      data: {
-        agentId: agent.id,
-        walletType: "BASE_TREASURY",
-        network,
-        chain,
-        address: `agent_base_treasury_${agent.id}`,
-        balance: 0,
-      },
-    });
-  }
+  await prisma.agentWallet.create({
+    data: {
+      agentId: agent.id,
+      walletType: "BASE_TREASURY",
+      network,
+      chain,
+      address: `agent_base_treasury_${agent.id}`,
+      balance: 0,
+    },
+  });
 
   await prisma.adminActionLog.create({
     data: {
