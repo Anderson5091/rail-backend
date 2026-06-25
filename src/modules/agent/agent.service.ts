@@ -260,15 +260,7 @@ export class AgentService {
 
     let beneficiaryId = payload.beneficiaryId;
 
-    if (payload.userId) {
-      const userWallet = await prisma.wallet.findFirst({ where: { userId: payload.userId } });
-      if (!userWallet) throw new Error("User wallet not found");
-
-      const balance = await ledgerService.getBalance(userWallet.id);
-      if (balance < payload.amount) throw new Error("Insufficient user balance");
-
-      await ledgerService.debit(userWallet.id, payload.amount, `agent_transfer_${agentId}_${Date.now()}`);
-    } else if (agent.type === "PARTNER") {
+    if (agent.type === "PARTNER") {
       const baseWallet = (agent.wallets as AgentWalletRow[]).find((w) => w.walletType === "BASE_TREASURY");
       if (!baseWallet) throw new Error("Agent base treasury wallet not found");
       if (Number(baseWallet.balance) < payload.amount) {
@@ -345,21 +337,6 @@ export class AgentService {
       where: { id: transfer.id },
       data: { payoutOrderId: payoutOrder.id },
     });
-
-    if (payload.userId) {
-      const wallet = await prisma.wallet.findFirst({ where: { userId: payload.userId } });
-      if (wallet) {
-        await prisma.walletTransaction.create({
-          data: {
-            walletId: wallet.id,
-            type: "AGENT_TRANSFER",
-            amount: netAmount,
-            status: "PENDING",
-            payoutOrderId: payoutOrder.id,
-          },
-        });
-      }
-    }
 
     const agentTx = await prisma.agentTransaction.create({
       data: {
