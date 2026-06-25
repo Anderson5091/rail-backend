@@ -95,6 +95,18 @@ export class AgentService {
         data: { balance: { decrement: usdtAmount } },
       });
 
+      await prisma.treasuryMovement.create({
+        data: {
+          fromWallet: "HOT",
+          toWallet: "AGENT_DEPOSIT",
+          fromWalletId: hotWallet.id,
+          amount: usdtAmount,
+          network: hotWallet.network,
+          reason: `Agent ${agentId} deposit to user ${userId}`,
+          status: "COMPLETED",
+        },
+      });
+
       if (commission > 0) {
         await prisma.agent.update({
           where: { id: agentId },
@@ -259,6 +271,7 @@ export class AgentService {
     const netAmount = payload.amount - commission;
 
     let beneficiaryId = payload.beneficiaryId;
+    let treasurySource: { id: string; network: string } | null = null;
 
     if (agent.type === "PARTNER") {
       const baseWallet = (agent.wallets as AgentWalletRow[]).find((w) => w.walletType === "BASE_TREASURY");
@@ -284,6 +297,8 @@ export class AgentService {
         where: { id: hotWallet.id },
         data: { balance: { decrement: payload.amount } },
       });
+
+      treasurySource = { id: hotWallet.id, network: hotWallet.network };
     }
 
     if (commission > 0) {
@@ -311,6 +326,20 @@ export class AgentService {
     }
 
     if (!beneficiaryId) throw new Error("beneficiaryId or inline beneficiary details required");
+
+    if (treasurySource) {
+      await prisma.treasuryMovement.create({
+        data: {
+          fromWallet: "HOT",
+          toWallet: "AGENT_TRANSFER",
+          fromWalletId: treasurySource.id,
+          amount: payload.amount,
+          network: treasurySource.network,
+          reason: `Agent ${agentId} transfer to beneficiary ${beneficiaryId}`,
+          status: "COMPLETED",
+        },
+      });
+    }
 
     const referenceId = `at_${agentId}_${Date.now()}`;
 
@@ -397,6 +426,18 @@ export class AgentService {
     await prisma.treasuryWallet.update({
       where: { id: hotWallet.id },
       data: { balance: { decrement: usdtAmount } },
+    });
+
+    await prisma.treasuryMovement.create({
+      data: {
+        fromWallet: "HOT",
+        toWallet: "PARTNER_TOPUP",
+        fromWalletId: hotWallet.id,
+        amount: usdtAmount,
+        network: hotWallet.network,
+        reason: `Internal agent ${internalAgentId} topped up partner ${partnerAgentId}`,
+        status: "COMPLETED",
+      },
     });
 
     await prisma.agentWallet.update({
