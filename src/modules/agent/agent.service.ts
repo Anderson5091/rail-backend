@@ -85,7 +85,7 @@ export class AgentService {
         },
       });
     } else {
-      const wallet = (agent.wallets as AgentWalletRow[]).find((w) => w.walletType === "MAIN");
+      const wallet = (agent.wallets as AgentWalletRow[]).find((w) => w.walletType === "MAIN" || w.walletType === "BASE_TREASURY");
       if (!wallet) throw new Error("Agent wallet not found");
       if (Number(wallet.balance) < usdtAmount) {
         throw new Error("Insufficient agent wallet balance. Request top-up from internal agent.");
@@ -282,7 +282,7 @@ export class AgentService {
         },
       });
     } else {
-      const wallet = (agent.wallets as AgentWalletRow[]).find((w) => w.walletType === "MAIN");
+      const wallet = (agent.wallets as AgentWalletRow[]).find((w) => w.walletType === "MAIN" || w.walletType === "BASE_TREASURY");
       if (!wallet) throw new Error("Agent wallet not found");
       if (Number(wallet.balance) < payload.amount) {
         throw new Error("Insufficient agent wallet balance. Request top-up from internal agent.");
@@ -398,7 +398,7 @@ export class AgentService {
       throw new Error("Target agent must be a partner");
     }
 
-    const partnerWallet = (partner.wallets as AgentWalletRow[]).find((w) => w.walletType === "MAIN");
+    const partnerWallet = (partner.wallets as AgentWalletRow[]).find((w) => w.walletType === "MAIN" || w.walletType === "BASE_TREASURY");
     if (!partnerWallet) throw new Error("Partner wallet not found");
 
     await prisma.treasuryWallet.update({
@@ -453,7 +453,7 @@ export class AgentService {
       throw new Error("Commission balance must be at least $10 to withdraw");
     }
 
-    const wallet = (agent.wallets as AgentWalletRow[]).find((w) => w.walletType === "MAIN");
+    const wallet = (agent.wallets as AgentWalletRow[]).find((w) => w.walletType === "MAIN" || w.walletType === "BASE_TREASURY");
     if (!wallet) throw new Error("Agent wallet not found");
 
     await prisma.agent.update({
@@ -519,7 +519,7 @@ export class AgentService {
     const agentWallets = agent.wallets as AgentWalletRow[];
     const agentTransactions = agent.transactions as AgentTransactionRow[];
 
-    const wallet = agentWallets.find((w) => w.walletType === "MAIN");
+    const wallet = agentWallets.find((w) => w.walletType === "MAIN" || w.walletType === "BASE_TREASURY" || w.walletType === "BASE_TREASURY");
 
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -548,12 +548,14 @@ export class AgentService {
         status: t.status,
         createdAt: t.createdAt,
       })),
-      wallets: agentWallets.map((w: AgentWalletRow) => ({
-        id: w.id,
-        walletType: w.walletType,
-        network: w.network,
-        balance: Number(w.balance),
-      })),
+      wallets: agentWallets
+        .filter((w: AgentWalletRow) => w.walletType !== "COMMISSION")
+        .map((w: AgentWalletRow) => ({
+          id: w.id,
+          walletType: w.walletType === "BASE_TREASURY" ? "MAIN" : w.walletType,
+          network: w.network,
+          balance: Number(w.balance),
+        })),
     };
   }
 
@@ -600,7 +602,7 @@ export class AgentService {
         });
         results.push(`${walletType}: created (dummy)`);
       }
-    } else if (existing.address.startsWith("MAIN_") || existing.address.startsWith("wallet_")) {
+    } else if (existing.address.startsWith("MAIN_") || existing.address.startsWith("BASE_TREASURY_") || existing.address.startsWith("wallet_")) {
       try {
         const alias = `agent_wallet_${agent.id}`;
         const { crossmintService } = await import("../../services/crossmint.service");

@@ -113,7 +113,7 @@ router.get("/list", authenticate, requireRole("SUPER_ADMIN", "OPS", "TREASURY"),
       kpiRating: a.kpiRating,
       totalRewards: Number(a.totalRewards),
       totalTransactions: a._count.transactions,
-      walletBalance: Number(a.wallets.find((w: { walletType: string }) => w.walletType === "MAIN")?.balance ?? 0),
+      walletBalance: Number(a.wallets.find((w: { walletType: string }) => w.walletType === "MAIN" || w.walletType === "BASE_TREASURY")?.balance ?? 0),
       commissionLedgerBalance: Number(a.commissionLedger),
       createdAt: a.createdAt,
     }))
