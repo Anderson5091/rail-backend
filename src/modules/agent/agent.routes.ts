@@ -206,34 +206,40 @@ router.post("/topup-partner", authenticate, requireRole("AGENT_INTERNAL"), async
 });
 
 router.post("/:id/transfer", authenticate, requireRole("AGENT_PARTNER", "AGENT_INTERNAL"), async (req: AuthRequest, res: Response) => {
-  const { userId, amount, payoutMethod, beneficiaryId, beneficiary, commissionPercent } = req.body;
-  if (!amount || !payoutMethod) {
-    return res.status(400).json({ error: "amount, and payoutMethod are required" });
+  try {
+    const { userId, amount, payoutMethod, beneficiaryId, beneficiary, commissionPercent } = req.body;
+    if (!amount || !payoutMethod) {
+      return res.status(400).json({ error: "amount, and payoutMethod are required" });
+    }
+    if (!beneficiaryId && !beneficiary) {
+      return res.status(400).json({ error: "beneficiaryId or beneficiary details are required" });
+    }
+
+    const result = await agentService.processTransfer(String(req.params.id), {
+      userId: userId || undefined,
+      amount: Number(amount),
+      payoutMethod,
+      beneficiaryId: beneficiaryId || undefined,
+      beneficiary,
+      commissionPercent: Number(commissionPercent || 0),
+    });
+
+    const payoutOrchestrator = new PayoutOrchestrator();
+    payoutOrchestrator.execute({
+      id: result.transfer.id,
+      payoutMethod,
+      amount: Number(result.transfer.amount),
+      beneficiaryId: result.transfer.beneficiaryId,
+    }).catch((err: Error) => {
+      console.error(`[AGENT_TRANSFER] Auto-payout failed for transfer ${result.transfer.id}:`, err.message);
+    });
+
+    res.json(result.agentTx);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "Transfer failed";
+    console.error("[AGENT_TRANSFER] Error:", err);
+    res.status(400).json({ error: message });
   }
-  if (!beneficiaryId && !beneficiary) {
-    return res.status(400).json({ error: "beneficiaryId or beneficiary details are required" });
-  }
-
-  const result = await agentService.processTransfer(String(req.params.id), {
-    userId: userId || undefined,
-    amount: Number(amount),
-    payoutMethod,
-    beneficiaryId: beneficiaryId || undefined,
-    beneficiary,
-    commissionPercent: Number(commissionPercent || 0),
-  });
-
-  const payoutOrchestrator = new PayoutOrchestrator();
-  payoutOrchestrator.execute({
-    id: result.transfer.id,
-    payoutMethod,
-    amount: result.transfer.amount,
-    beneficiaryId: result.transfer.beneficiaryId,
-  }).catch((err: Error) => {
-    console.error(`[AGENT_TRANSFER] Auto-payout failed for transfer ${result.transfer.id}:`, err.message);
-  });
-
-  res.json(result.agentTx);
 });
 
 router.post("/:id/process-payout", authenticate, requireRole("AGENT_PARTNER", "AGENT_INTERNAL"), async (req: AuthRequest, res: Response) => {
