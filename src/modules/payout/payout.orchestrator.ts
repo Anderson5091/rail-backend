@@ -105,10 +105,10 @@ export class PayoutOrchestrator {
         },
       });
 
-      // Auto-revert: credit funds back to the user's wallet
+      // Auto-revert: credit funds back to the user's wallet (if registered)
       try {
         const transferRecord = await prisma.transfer.findUnique({ where: { id: transfer.id } });
-        if (transferRecord) {
+        if (transferRecord && transferRecord.userId) {
           const wallet = await prisma.wallet.findFirst({ where: { userId: transferRecord.userId } });
           if (wallet) {
             await ledgerService.credit(wallet.id, Number(transferRecord.amount), `refund_payout_failed_${transfer.id}`);
@@ -118,6 +118,8 @@ export class PayoutOrchestrator {
               data: { status: "FAILED" },
             });
           }
+        }
+        if (transferRecord) {
           await prisma.transfer.update({
             where: { id: transfer.id },
             data: { status: "FAILED" },

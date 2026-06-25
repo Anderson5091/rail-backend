@@ -230,6 +230,148 @@ export class AgentService {
     return tx;
   }
 
+  async processTransfer(
+    agentId: string,
+    payload: {
+      userId?: string;
+      amount: number;
+      payoutMethod: string;
+      beneficiaryId?: string;
+      beneficiary?: {
+        fullName: string;
+        country: string;
+        bankName?: string;
+        accountNumber?: string;
+        mobileWalletNumber?: string;
+        mobileProvider?: string;
+        cashPickupLocation?: string;
+      };
+      commissionPercent: number;
+    }
+  ) {
+    const agent = await prisma.agent.findUnique({
+      where: { id: agentId },
+      include: { wallets: true },
+    });
+    if (!agent) throw new Error("Agent not found");
+
+    const commission = (payload.amount * payload.commissionPercent) / 100;
+    const netAmount = payload.amount - commission;
+
+    let beneficiaryId = payload.beneficiaryId;
+
+    if (payload.userId) {
+      const userWallet = await prisma.wallet.findFirst({ where: { userId: payload.userId } });
+      if (!userWallet) throw new Error("User wallet not found");
+
+      const balance = await ledgerService.getBalance(userWallet.id);
+      if (balance < payload.amount) throw new Error("Insufficient user balance");
+
+      await ledgerService.debit(userWallet.id, payload.amount, `agent_transfer_${agentId}_${Date.now()}`);
+    } else {
+      const baseWallet = (agent.wallets as AgentWalletRow[]).find((w) => w.walletType === "BASE_TREASURY");
+      if (!baseWallet) throw new Error("Agent base treasury wallet not found");
+      if (Number(baseWallet.balance) < payload.amount) {
+        throw new Error("Insufficient agent treasury balance. Request top-up from internal agent.");
+      }
+
+      await prisma.agentWallet.update({
+        where: { id: baseWallet.id },
+        data: { balance: { decrement: payload.amount } },
+      });
+    }
+
+    if (commission > 0) {
+      await prisma.agent.update({
+        where: { id: agentId },
+        data: { commissionLedger: { increment: commission } },
+      });
+    }
+
+    if (!beneficiaryId && payload.beneficiary) {
+      const ben = await prisma.beneficiary.create({
+        data: {
+          userId: payload.userId || null,
+          fullName: payload.beneficiary.fullName,
+          country: payload.beneficiary.country,
+          payoutMethod: payload.payoutMethod,
+          bankName: payload.beneficiary.bankName || null,
+          accountNumber: payload.beneficiary.accountNumber || null,
+          mobileWalletNumber: payload.beneficiary.mobileWalletNumber || null,
+          mobileProvider: payload.beneficiary.mobileProvider || null,
+          cashPickupLocation: payload.beneficiary.cashPickupLocation || null,
+        },
+      });
+      beneficiaryId = ben.id;
+    }
+
+    if (!beneficiaryId) throw new Error("beneficiaryId or inline beneficiary details required");
+
+    const referenceId = `at_${agentId}_${Date.now()}`;
+
+    const transfer = await prisma.transfer.create({
+      data: {
+        userId: payload.userId || null,
+        beneficiaryId,
+        amount: netAmount,
+        payoutMethod: payload.payoutMethod,
+        status: "PENDING_PAYOUT",
+        referenceId,
+      },
+    });
+
+    const payoutOrder = await prisma.payoutOrder.create({
+      data: {
+        transferId: transfer.id,
+        payoutMethod: payload.payoutMethod,
+        status: "PENDING",
+      },
+    });
+
+    await prisma.transfer.update({
+      where: { id: transfer.id },
+      data: { payoutOrderId: payoutOrder.id },
+    });
+
+    if (payload.userId) {
+      const wallet = await prisma.wallet.findFirst({ where: { userId: payload.userId } });
+      if (wallet) {
+        await prisma.walletTransaction.create({
+          data: {
+            walletId: wallet.id,
+            type: "AGENT_TRANSFER",
+            amount: netAmount,
+            status: "PENDING",
+            payoutOrderId: payoutOrder.id,
+          },
+        });
+      }
+    }
+
+    const agentTx = await prisma.agentTransaction.create({
+      data: {
+        agentId,
+        type: "TRANSFER",
+        amount: payload.amount,
+        commission,
+        netAmount,
+        userRef: payload.userId || null,
+        status: "COMPLETED",
+        reference: referenceId,
+        metadata: {
+          payoutMethod: payload.payoutMethod,
+          beneficiaryId,
+          isRegistered: !!payload.userId,
+        },
+      },
+    });
+
+    await this.recordKpi(agentId, payload.amount, commission);
+
+    logger.info(`[Agent] Agent ${agentId} transferred ${netAmount} USDT to beneficiary ${beneficiaryId}`);
+    return { agentTx, transfer };
+  }
+
   async topUpPartnerBalance(
     internalAgentId: string,
     partnerAgentId: string,

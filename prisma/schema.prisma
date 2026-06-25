@@ -92,8 +92,8 @@ model LedgerEntry {
 }
 
 model Beneficiary {
-  id                 String   @id @default(cuid())
-  userId             String
+  id                 String    @id @default(cuid())
+  userId             String?
   fullName           String
   country            String
   payoutMethod       String
@@ -102,8 +102,8 @@ model Beneficiary {
   mobileWalletNumber String?
   mobileProvider     String?
   cashPickupLocation String?
-  createdAt          DateTime @default(now())
-  user               User     @relation(fields: [userId], references: [id])
+  createdAt          DateTime  @default(now())
+  user               User?     @relation(fields: [userId], references: [id])
 }
 
 model FxRate {
@@ -124,7 +124,7 @@ model FeeRule {
 
 model Transfer {
   id                String       @id @default(cuid())
-  userId            String
+  userId            String?
   beneficiaryId     String?
   amount            Decimal      @db.Decimal(24, 8)
   payoutMethod      String?
@@ -137,7 +137,7 @@ model Transfer {
   createdAt         DateTime     @default(now())
   updatedAt         DateTime     @updatedAt
   payoutOrder       PayoutOrder?
-  user              User         @relation(fields: [userId], references: [id])
+  user              User?        @relation(fields: [userId], references: [id])
 }
 
 model PayoutOrder {
