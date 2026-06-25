@@ -268,7 +268,7 @@ export class AgentService {
       if (balance < payload.amount) throw new Error("Insufficient user balance");
 
       await ledgerService.debit(userWallet.id, payload.amount, `agent_transfer_${agentId}_${Date.now()}`);
-    } else {
+    } else if (agent.type === "PARTNER") {
       const baseWallet = (agent.wallets as AgentWalletRow[]).find((w) => w.walletType === "BASE_TREASURY");
       if (!baseWallet) throw new Error("Agent base treasury wallet not found");
       if (Number(baseWallet.balance) < payload.amount) {
@@ -277,6 +277,19 @@ export class AgentService {
 
       await prisma.agentWallet.update({
         where: { id: baseWallet.id },
+        data: { balance: { decrement: payload.amount } },
+      });
+    } else {
+      const hotWallet = await prisma.treasuryWallet.findFirst({
+        where: { walletType: "HOT" },
+      });
+      if (!hotWallet) throw new Error("System hot treasury wallet not found");
+      if (Number(hotWallet.balance) < payload.amount) {
+        throw new Error("Insufficient system treasury balance");
+      }
+
+      await prisma.treasuryWallet.update({
+        where: { id: hotWallet.id },
         data: { balance: { decrement: payload.amount } },
       });
     }
