@@ -539,6 +539,7 @@ export class AgentService {
         currency: t.currency,
         status: t.status,
         referenceId: t.referenceId,
+        processingAgentId: t.processingAgentId,
         createdAt: t.createdAt,
       })),
     };
