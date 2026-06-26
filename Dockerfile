@@ -25,22 +25,18 @@ RUN npm run build
 FROM node:22-alpine AS runner
 WORKDIR /app
 
-# Set production environment
 ENV NODE_ENV=production
 
-# Copy package configurations and install production-only dependencies
 COPY package*.json ./
 RUN npm ci --only=production
 
-# Copy the built application from the builder stage
 COPY --from=builder /app/dist ./dist
-
-# Copy absolute requirements for Prisma migrations/db push
 COPY --from=builder /app/prisma ./prisma
 COPY --from=builder /app/prisma.config.ts ./prisma.config.ts
 
-# Expose your application port (adjust if your backend uses a different port, e.g., 8080)
+# 👇 ADD THIS LINE HERE TO COPY THE GENERATED CLIENT
+COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
+
 EXPOSE 3000
 
-# Start the application
 CMD ["npm", "run", "start:prod"]
