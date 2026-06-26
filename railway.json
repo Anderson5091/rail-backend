@@ -5,7 +5,7 @@
     "buildCommand": "npx prisma generate && npm run build"
   },
   "deploy": {
-    "preDeployCommand": "npx prisma db push",
+    "preDeployCommand": "npx tsx prisma/clean-dupes.ts && npx prisma db push --accept-data-loss",
     "startCommand": "npm run start",
     "healthcheckPath": "/health",
     "healthcheckTimeout": 10,
