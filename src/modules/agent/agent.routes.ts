@@ -94,6 +94,31 @@ router.post("/create", authenticate, requireRole("SUPER_ADMIN", "OPS"), async (r
   });
 });
 
+router.get("/pending-transfers", authenticate, requireRole("AGENT_PARTNER", "AGENT_INTERNAL"), async (_req: AuthRequest, res: Response) => {
+  try {
+    const transfers = await prisma.transfer.findMany({
+      where: { status: { in: ["PENDING_PAYOUT", "PROCESSING"] } },
+      orderBy: { createdAt: "desc" },
+      take: 50,
+    });
+
+    res.json(transfers.map((t: any) => ({
+      id: t.id,
+      amount: Number(t.amount),
+      fee: Number(t.fee || 0),
+      destinationAmount: Number(t.destinationAmount || 0),
+      payoutMethod: t.payoutMethod,
+      currency: t.currency,
+      status: t.status,
+      referenceId: t.referenceId,
+      createdAt: t.createdAt,
+    })));
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "Failed to fetch pending transfers";
+    res.status(400).json({ error: message });
+  }
+});
+
 router.get("/list", authenticate, requireRole("SUPER_ADMIN", "OPS", "TREASURY"), async (_req: AuthRequest, res: Response) => {
   const agents = await prisma.agent.findMany({
     include: {
@@ -391,31 +416,6 @@ router.get("/:id/transactions", authenticate, async (req: AuthRequest, res: Resp
   );
 });
 
-router.get("/pending-transfers", authenticate, requireRole("AGENT_PARTNER", "AGENT_INTERNAL"), async (_req: AuthRequest, res: Response) => {
-  try {
-    const transfers = await prisma.transfer.findMany({
-      where: { status: { in: ["PENDING_PAYOUT", "PROCESSING"] } },
-      orderBy: { createdAt: "desc" },
-      take: 50,
-    });
-
-    res.json(transfers.map((t: any) => ({
-      id: t.id,
-      amount: Number(t.amount),
-      fee: Number(t.fee || 0),
-      destinationAmount: Number(t.destinationAmount || 0),
-      payoutMethod: t.payoutMethod,
-      currency: t.currency,
-      status: t.status,
-      referenceId: t.referenceId,
-      createdAt: t.createdAt,
-    })));
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Failed to fetch pending transfers";
-    res.status(400).json({ error: message });
-  }
-});
-
 router.post("/:id/execute-payout", authenticate, requireRole("AGENT_PARTNER", "AGENT_INTERNAL"), async (req: AuthRequest, res: Response) => {
   try {
     const { transferId } = req.body;
@@ -434,19 +434,46 @@ router.post("/:id/execute-payout", authenticate, requireRole("AGENT_PARTNER", "A
       data: { status: "PROCESSING" },
     });
 
-    const payoutOrchestrator = new (await import("../payout/payout.orchestrator")).PayoutOrchestrator();
-    payoutOrchestrator.execute({
-      id: transfer.id,
-      payoutMethod: transfer.payoutMethod || "CASH_PICKUP",
-      amount: Number(transfer.amount),
-      beneficiaryId: transfer.beneficiaryId || undefined,
-    }).catch((err: Error) => {
-      console.error(`[EXECUTE_PAYOUT] Auto-payout failed for transfer ${transfer.id}:`, err.message);
-    });
-
-    res.json({ success: true, message: "Payout triggered", transferId });
+    res.json({ success: true, message: "Payout processing — deliver funds manually and upload proof", transferId });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Failed to execute payout";
+    res.status(400).json({ error: message });
+  }
+});
+
+router.post("/:id/confirm-payout", authenticate, requireRole("AGENT_PARTNER", "AGENT_INTERNAL"), async (req: AuthRequest, res: Response) => {
+  try {
+    const { transferId, proofImage, proofMimeType } = req.body;
+    if (!transferId || !proofImage) {
+      return res.status(400).json({ error: "transferId and proofImage are required" });
+    }
+
+    const transfer = await prisma.transfer.findUnique({ where: { id: transferId } });
+    if (!transfer) return res.status(404).json({ error: "Transfer not found" });
+    if (transfer.status !== "PROCESSING") return res.status(400).json({ error: "Transfer is not in PROCESSING status" });
+
+    const agentId = String(req.params.id);
+    const agent = await prisma.agent.findUnique({ where: { id: agentId } });
+    if (!agent) return res.status(404).json({ error: "Agent not found" });
+
+    await prisma.transfer.update({
+      where: { id: transferId },
+      data: {
+        status: "COMPLETED",
+        proofImage,
+        proofMimeType: proofMimeType || "image/jpeg",
+        completedAt: new Date(),
+      },
+    });
+
+    await prisma.payoutOrder.update({
+      where: { transferId },
+      data: { status: "COMPLETED" },
+    });
+
+    res.json({ success: true, message: "Payout confirmed and completed", transferId });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "Failed to confirm payout";
     res.status(400).json({ error: message });
   }
 });

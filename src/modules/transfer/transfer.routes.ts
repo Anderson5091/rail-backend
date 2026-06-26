@@ -36,10 +36,11 @@ router.post("/", authenticate, idempotencyMiddleware, async (req: AuthRequest, r
     data.payoutMethod,
     data.accountCurrency || beneficiary?.accountCurrency,
   );
-  const transfer = await orchestrator.createTransfer(
-    { ...data, currency },
-    req.userId!,
-  );
+  const transfer = await orchestrator.createTransfer({
+    ...data,
+    currency,
+    userId: req.userId!,
+  });
   res.status(201).json(transfer);
 });
 

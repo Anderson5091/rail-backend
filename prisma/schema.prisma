@@ -139,6 +139,9 @@ model Transfer {
   destinationAmount   Decimal?     @db.Decimal(24, 8)
   referenceId         String?      @unique
   payoutOrderId       String?
+  proofImage          String?      @db.Text
+  proofMimeType       String?
+  completedAt         DateTime?
   createdAt           DateTime     @default(now())
   updatedAt           DateTime     @updatedAt
   payoutOrder         PayoutOrder?

@@ -2,85 +2,119 @@ import { prisma } from "../../config/database";
 import { lockService } from "../../services/lock.service";
 import { ledgerService } from "../ledger/ledger.service";
 import { eventEmitter } from "../events/event.emitter";
-import { PayoutOrchestrator } from "../payout/payout.orchestrator";
 import { logger } from "../../utils/logger";
 import { generateTransactionNumber, generateReferenceNumber } from "../../utils/id-generator";
 
-const payoutOrchestrator = new PayoutOrchestrator();
+interface CreateTransferInput {
+  beneficiaryId?: string;
+  beneficiary?: {
+    fullName: string;
+    country: string;
+    bankName?: string;
+    accountNumber?: string;
+    accountCurrency?: string;
+    mobileWalletNumber?: string;
+    mobileProvider?: string;
+    cashPickupLocation?: string;
+  };
+  amount: number;
+  payoutMethod: string;
+  currency?: string;
+  referenceId?: string;
+  userId?: string;
+  skipWalletDebit?: boolean;
+}
 
 export class TransferOrchestrator {
-  async createTransfer(data: { beneficiaryId: string; amount: number; payoutMethod: string; currency?: string }, userId: string) {
-    const beneficiary = await prisma.beneficiary.findFirst({
-      where: { id: data.beneficiaryId, userId },
-    });
-    if (!beneficiary) throw new Error("Beneficiary not found");
+  async createTransfer(input: CreateTransferInput) {
+    let beneficiaryId = input.beneficiaryId;
 
-    const wallet = await prisma.wallet.findFirst({ where: { userId } });
-    if (!wallet) throw new Error("Wallet not found");
-
-    const transactionNumber = generateTransactionNumber();
-
-    const transfer = await lockService.withLock(`wallet:${wallet.id}`, async () => {
-      const balance = await ledgerService.getBalance(wallet.id);
-      if (Number(balance) < data.amount) {
-        throw new Error("Insufficient balance");
-      }
-
-      await ledgerService.debit(wallet.id, data.amount, transactionNumber);
-
-      const currency = data.currency || "USD";
-      const t = await prisma.transfer.create({
+    if (!beneficiaryId && input.beneficiary) {
+      const ben = await prisma.beneficiary.create({
         data: {
-          userId,
-          beneficiaryId: data.beneficiaryId,
-          amount: data.amount,
-          payoutMethod: data.payoutMethod,
-          currency,
-          status: "PENDING_PAYOUT",
-          referenceId: transactionNumber,
+      userId: input.userId || undefined,
+          fullName: input.beneficiary.fullName,
+          country: input.beneficiary.country,
+          payoutMethod: input.payoutMethod,
+          bankName: input.beneficiary.bankName || null,
+          accountNumber: input.beneficiary.accountNumber || null,
+          accountCurrency: input.beneficiary.accountCurrency || null,
+          mobileWalletNumber: input.beneficiary.mobileWalletNumber || null,
+          mobileProvider: input.beneficiary.mobileProvider || null,
+          cashPickupLocation: input.beneficiary.cashPickupLocation || null,
         },
       });
+      beneficiaryId = ben.id;
+    }
 
-      const payoutOrder = await prisma.payoutOrder.create({
-        data: {
-          transferId: t.id,
-          payoutMethod: data.payoutMethod,
-          currency,
-          status: "PENDING",
-        },
-      });
+    if (!beneficiaryId) throw new Error("Beneficiary ID or inline beneficiary details are required");
 
-      await prisma.transfer.update({
-        where: { id: t.id },
-        data: { payoutOrderId: payoutOrder.id },
-      });
+    const currency = input.currency || "USD";
+    const referenceId = input.referenceId || generateReferenceNumber();
 
-      await prisma.walletTransaction.create({
-        data: {
-          walletId: wallet.id,
-          type: "TRANSFER",
-          amount: data.amount,
-          status: "PENDING",
-          transactionNumber,
-          payoutOrderId: payoutOrder.id,
-        },
-      });
-
-      await eventEmitter.emit("TRANSFER_CREATED", {
-        eventType: "TRANSFER_CREATED",
-        entity: "Transfer",
-        entityId: t.id,
-        userId,
-        metadata: { amount: data.amount, payoutMethod: data.payoutMethod, transactionNumber },
-      });
-
-      payoutOrchestrator.execute({ ...t, payoutOrderId: payoutOrder.id, beneficiaryId: data.beneficiaryId }).catch((err) => {
-        logger.error(`[TRANSFER] Auto-payout failed for transfer ${t.id}: ${err.message}`);
-      });
-
-      return { ...t, payoutOrderId: payoutOrder.id, transactionNumber };
+    const transfer = await prisma.transfer.create({
+      data: {
+      userId: input.userId,
+        beneficiaryId,
+        amount: input.amount,
+        payoutMethod: input.payoutMethod,
+        currency,
+        status: "PENDING_PAYOUT",
+        referenceId,
+      },
     });
 
-    return transfer;
+    const payoutOrder = await prisma.payoutOrder.create({
+      data: {
+        transferId: transfer.id,
+        payoutMethod: input.payoutMethod,
+        currency,
+        status: "PENDING",
+      },
+    });
+
+    await prisma.transfer.update({
+      where: { id: transfer.id },
+      data: { payoutOrderId: payoutOrder.id },
+    });
+
+    if (input.userId && !input.skipWalletDebit) {
+      const wallet = await prisma.wallet.findFirst({ where: { userId: input.userId } });
+      if (!wallet) throw new Error("Wallet not found");
+
+      const transactionNumber = generateTransactionNumber();
+
+      await lockService.withLock(`wallet:${wallet.id}`, async () => {
+        const balance = await ledgerService.getBalance(wallet.id);
+        if (Number(balance) < input.amount) {
+          throw new Error("Insufficient balance");
+        }
+
+        await ledgerService.debit(wallet.id, input.amount, transactionNumber);
+
+        await prisma.walletTransaction.create({
+          data: {
+            walletId: wallet.id,
+            type: "TRANSFER",
+            amount: input.amount,
+            status: "PENDING",
+            transactionNumber,
+            payoutOrderId: payoutOrder.id,
+          },
+        });
+      });
+    }
+
+    await eventEmitter.emit("TRANSFER_CREATED", {
+      eventType: "TRANSFER_CREATED",
+      entity: "Transfer",
+      entityId: transfer.id,
+      userId: input.userId as string | undefined,
+      metadata: { amount: input.amount, payoutMethod: input.payoutMethod, referenceId },
+    });
+
+    return { ...transfer, payoutOrderId: payoutOrder.id, referenceId };
   }
 }
+
+export type { CreateTransferInput };

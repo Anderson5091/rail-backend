@@ -1,7 +1,10 @@
 import { prisma } from "../../config/database";
 import { ledgerService } from "../ledger/ledger.service";
+import { TransferOrchestrator } from "../transfer/transfer.orchestrator";
 import { logger } from "../../utils/logger";
 import { generateReferenceNumber } from "../../utils/id-generator";
+
+const transferOrchestrator = new TransferOrchestrator();
 
 interface AgentWalletRow {
   id: string;
@@ -261,8 +264,6 @@ export class AgentService {
     const commission = (payload.amount * payload.commissionPercent) / 100;
     const netAmount = payload.amount - commission;
 
-    let beneficiaryId = payload.beneficiaryId;
-
     if (agent.type === "INTERNAL") {
       const hotWallet = await prisma.treasuryWallet.findFirst({ where: { walletType: "HOT" } });
       if (!hotWallet) throw new Error("System hot treasury not found");
@@ -303,53 +304,14 @@ export class AgentService {
       });
     }
 
-    if (!beneficiaryId && payload.beneficiary) {
-      const ben = await prisma.beneficiary.create({
-        data: {
-          userId: payload.userId || null,
-          fullName: payload.beneficiary.fullName,
-          country: payload.beneficiary.country,
-          payoutMethod: payload.payoutMethod,
-          bankName: payload.beneficiary.bankName || null,
-          accountNumber: payload.beneficiary.accountNumber || null,
-          accountCurrency: payload.beneficiary.accountCurrency || null,
-          mobileWalletNumber: payload.beneficiary.mobileWalletNumber || null,
-          mobileProvider: payload.beneficiary.mobileProvider || null,
-          cashPickupLocation: payload.beneficiary.cashPickupLocation || null,
-        },
-      });
-      beneficiaryId = ben.id;
-    }
-
-    if (!beneficiaryId) throw new Error("beneficiaryId or inline beneficiary details required");
-
-    const referenceId = generateReferenceNumber();
-
-    const currency = payload.currency || "USD";
-    const transfer = await prisma.transfer.create({
-      data: {
-        userId: payload.userId || null,
-        beneficiaryId,
-        amount: netAmount,
-        payoutMethod: payload.payoutMethod,
-        currency,
-        status: "PENDING_PAYOUT",
-        referenceId,
-      },
-    });
-
-    const payoutOrder = await prisma.payoutOrder.create({
-      data: {
-        transferId: transfer.id,
-        payoutMethod: payload.payoutMethod,
-        currency,
-        status: "PENDING",
-      },
-    });
-
-    await prisma.transfer.update({
-      where: { id: transfer.id },
-      data: { payoutOrderId: payoutOrder.id },
+    const transfer = await transferOrchestrator.createTransfer({
+      userId: payload.userId || undefined,
+      amount: netAmount,
+      payoutMethod: payload.payoutMethod,
+      beneficiaryId: payload.beneficiaryId,
+      beneficiary: payload.beneficiary,
+      currency: payload.currency,
+      skipWalletDebit: true,
     });
 
     const agentTx = await prisma.agentTransaction.create({
@@ -361,10 +323,10 @@ export class AgentService {
         netAmount,
         userRef: payload.userId || null,
         status: "COMPLETED",
-        reference: referenceId,
+        reference: transfer.referenceId,
         metadata: {
           payoutMethod: payload.payoutMethod,
-          beneficiaryId,
+          beneficiaryId: transfer.beneficiaryId,
           isRegistered: !!payload.userId,
         },
       },
@@ -372,7 +334,7 @@ export class AgentService {
 
     await this.recordKpi(agentId, payload.amount, commission);
 
-    logger.info(`[Agent] Agent ${agentId} transferred ${netAmount} USDT to beneficiary ${beneficiaryId}`);
+    logger.info(`[Agent] Agent ${agentId} transferred ${netAmount} USDT to beneficiary ${transfer.beneficiaryId}`);
     return { agentTx, transfer };
   }
 
