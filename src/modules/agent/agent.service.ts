@@ -576,6 +576,7 @@ export class AgentService {
         payoutMethod: t.payoutMethod,
         currency: t.currency,
         status: t.status,
+        referenceId: t.referenceId,
         createdAt: t.createdAt,
       })),
     };
