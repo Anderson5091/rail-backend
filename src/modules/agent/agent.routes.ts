@@ -111,6 +111,7 @@ router.get("/pending-transfers", authenticate, requireRole("AGENT_PARTNER", "AGE
       currency: t.currency,
       status: t.status,
       referenceId: t.referenceId,
+      processingAgentId: t.processingAgentId,
       createdAt: t.createdAt,
     })));
   } catch (err: unknown) {
@@ -431,12 +432,38 @@ router.post("/:id/execute-payout", authenticate, requireRole("AGENT_PARTNER", "A
 
     await prisma.transfer.update({
       where: { id: transferId },
-      data: { status: "PROCESSING" },
+      data: { status: "PROCESSING", processingAgentId: agentId },
     });
 
     res.json({ success: true, message: "Payout processing — deliver funds manually and upload proof", transferId });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Failed to execute payout";
+    res.status(400).json({ error: message });
+  }
+});
+
+router.post("/:id/cancel-payout", authenticate, requireRole("AGENT_PARTNER", "AGENT_INTERNAL"), async (req: AuthRequest, res: Response) => {
+  try {
+    const { transferId } = req.body;
+    if (!transferId) return res.status(400).json({ error: "transferId is required" });
+
+    const transfer = await prisma.transfer.findUnique({ where: { id: transferId } });
+    if (!transfer) return res.status(404).json({ error: "Transfer not found" });
+    if (transfer.status !== "PROCESSING") return res.status(400).json({ error: "Transfer is not in PROCESSING status" });
+
+    const agentId = String(req.params.id);
+    if (transfer.processingAgentId && transfer.processingAgentId !== agentId) {
+      return res.status(403).json({ error: "This transfer is being processed by another agent" });
+    }
+
+    await prisma.transfer.update({
+      where: { id: transferId },
+      data: { status: "PENDING_PAYOUT", processingAgentId: null },
+    });
+
+    res.json({ success: true, message: "Payout cancelled, transfer returned to pending pool", transferId });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "Failed to cancel payout";
     res.status(400).json({ error: message });
   }
 });
@@ -453,8 +480,9 @@ router.post("/:id/confirm-payout", authenticate, requireRole("AGENT_PARTNER", "A
     if (transfer.status !== "PROCESSING") return res.status(400).json({ error: "Transfer is not in PROCESSING status" });
 
     const agentId = String(req.params.id);
-    const agent = await prisma.agent.findUnique({ where: { id: agentId } });
-    if (!agent) return res.status(404).json({ error: "Agent not found" });
+    if (transfer.processingAgentId && transfer.processingAgentId !== agentId) {
+      return res.status(403).json({ error: "This transfer is being processed by another agent" });
+    }
 
     await prisma.transfer.update({
       where: { id: transferId },
