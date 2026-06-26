@@ -94,13 +94,15 @@ router.post("/create", authenticate, requireRole("SUPER_ADMIN", "OPS"), async (r
   });
 });
 
-router.get("/pending-transfers", authenticate, requireRole("AGENT_PARTNER", "AGENT_INTERNAL"), async (_req: AuthRequest, res: Response) => {
+router.get("/pending-transfers", authenticate, requireRole("AGENT_PARTNER", "AGENT_INTERNAL"), async (req: AuthRequest, res: Response) => {
   try {
     const transfers = await prisma.transfer.findMany({
       where: { status: { in: ["PENDING_PAYOUT", "PROCESSING"] } },
       orderBy: { createdAt: "desc" },
       take: 50,
     });
+
+    const currentAgentId = req.userId;
 
     res.json(transfers.map((t: any) => ({
       id: t.id,
@@ -112,6 +114,7 @@ router.get("/pending-transfers", authenticate, requireRole("AGENT_PARTNER", "AGE
       status: t.status,
       referenceId: t.referenceId,
       processingAgentId: t.processingAgentId,
+      isMine: t.processingAgentId === currentAgentId,
       createdAt: t.createdAt,
     })));
   } catch (err: unknown) {
