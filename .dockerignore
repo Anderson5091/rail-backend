@@ -9,3 +9,4 @@ README.md
 .env.production
 coverage
 tests
+docker/
