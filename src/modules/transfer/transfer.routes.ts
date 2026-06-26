@@ -3,6 +3,8 @@ import { Router, Response } from "express";
 import { prisma } from "../../config/database";
 import { authenticate, AuthRequest } from "../../middleware/auth";
 import { idempotencyMiddleware } from "../../middleware/idempotency.middleware";
+import { fxService } from "../fx/fx.service";
+import { feeService } from "../fees/fee.service";
 import { TransferOrchestrator } from "./transfer.orchestrator";
 
 const router = Router();
@@ -11,25 +13,33 @@ const createSchema = z.object({
   beneficiaryId: z.string(),
   amount: z.number().positive(),
   payoutMethod: z.enum(["BANK", "MOBILE_MONEY", "CASH_PICKUP"]),
+  accountCurrency: z.string().optional(),
 });
 
 const orchestrator = new TransferOrchestrator();
 
 router.post("/quote", async (req: AuthRequest, res: Response) => {
-  const { amount, currency, country, method } = req.body;
-  const fxService = await import("../fx/fx.service").then(m => m.fxService);
-  const feeService = await import("../fees/fee.service").then(m => m.feeService);
-
-  const fxRate = await fxService.getRate("USDT", currency);
+  const { amount, currency, country, method, accountCurrency } = req.body;
+  const destCurrency = currency || await fxService.resolveCurrency(country, method, accountCurrency);
+  const fxRate = await fxService.getRate("USDT", destCurrency);
   const { fee } = await feeService.calculate(country, method, amount);
   const destinationAmount = (amount - fee) * fxRate;
 
-  res.json({ amount, fee, fxRate, destinationAmount });
+  res.json({ amount, fee, fxRate, destinationAmount, currency: destCurrency });
 });
 
 router.post("/", authenticate, idempotencyMiddleware, async (req: AuthRequest, res: Response) => {
   const data = createSchema.parse(req.body);
-  const transfer = await orchestrator.createTransfer(data, req.userId!);
+  const beneficiary = await prisma.beneficiary.findUnique({ where: { id: data.beneficiaryId } });
+  const currency = await fxService.resolveCurrency(
+    beneficiary?.country || "US",
+    data.payoutMethod,
+    data.accountCurrency || beneficiary?.accountCurrency,
+  );
+  const transfer = await orchestrator.createTransfer(
+    { ...data, currency },
+    req.userId!,
+  );
   res.status(201).json(transfer);
 });
 

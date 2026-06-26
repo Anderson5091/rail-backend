@@ -8,15 +8,16 @@ const router = Router();
 
 const quoteSchema = z.object({
   amount: z.number().positive(),
-  currency: z.string(),
   country: z.string(),
   method: z.enum(["BANK", "MOBILE_MONEY", "CASH_PICKUP"]),
+  accountCurrency: z.string().optional(),
 });
 
 router.post("/quote", authenticate, async (req: AuthRequest, res: Response) => {
   const data = quoteSchema.parse(req.body);
 
-  const fxRate = await fxService.getRate("USDT", data.currency);
+  const currency = await fxService.resolveCurrency(data.country, data.method, data.accountCurrency);
+  const fxRate = await fxService.getRate("USDT", currency);
   const { fee } = await feeService.calculate(data.country, data.method, data.amount);
   const destinationAmount = (data.amount - fee) * fxRate;
 
@@ -25,6 +26,7 @@ router.post("/quote", authenticate, async (req: AuthRequest, res: Response) => {
     fee,
     fxRate,
     destinationAmount,
+    currency,
   });
 });
 

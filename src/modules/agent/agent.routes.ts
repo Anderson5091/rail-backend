@@ -7,6 +7,7 @@ import { generateReferenceNumber } from "../../utils/id-generator";
 import { crossmintService } from "../../services/crossmint.service";
 import { PayoutOrchestrator } from "../payout/payout.orchestrator";
 import { ledgerService } from "../ledger/ledger.service";
+import { fxService } from "../fx/fx.service";
 import type { ChainType } from "../../services/crossmint.service";
 
 const router = Router();
@@ -224,13 +225,20 @@ router.post("/topup-partner", authenticate, requireRole("AGENT_INTERNAL"), async
 
 router.post("/:id/transfer", authenticate, requireRole("AGENT_PARTNER", "AGENT_INTERNAL"), async (req: AuthRequest, res: Response) => {
   try {
-    const { userId, amount, payoutMethod, beneficiaryId, beneficiary, commissionPercent } = req.body;
+    const { userId, amount, payoutMethod, beneficiaryId, beneficiary, commissionPercent, accountCurrency } = req.body;
     if (!amount || !payoutMethod) {
       return res.status(400).json({ error: "amount, and payoutMethod are required" });
     }
     if (!beneficiaryId && !beneficiary) {
       return res.status(400).json({ error: "beneficiaryId or beneficiary details are required" });
     }
+
+    let beneficiaryCountry = beneficiary?.country;
+    if (!beneficiaryCountry && beneficiaryId) {
+      const existing = await prisma.beneficiary.findUnique({ where: { id: beneficiaryId } });
+      beneficiaryCountry = existing?.country;
+    }
+    const currency = await fxService.resolveCurrency(beneficiaryCountry || "US", payoutMethod, accountCurrency);
 
     const result = await agentService.processTransfer(String(req.params.id), {
       userId: userId || undefined,
@@ -239,6 +247,7 @@ router.post("/:id/transfer", authenticate, requireRole("AGENT_PARTNER", "AGENT_I
       beneficiaryId: beneficiaryId || undefined,
       beneficiary,
       commissionPercent: Number(commissionPercent || 0),
+      currency,
     });
 
     payoutOrchestrator.execute({
@@ -259,7 +268,7 @@ router.post("/:id/transfer", authenticate, requireRole("AGENT_PARTNER", "AGENT_I
 });
 
 router.post("/:id/process-payout", authenticate, requireRole("AGENT_PARTNER", "AGENT_INTERNAL"), async (req: AuthRequest, res: Response) => {
-  const { userId, amount, payoutMethod, beneficiaryId, commissionPercent } = req.body;
+  const { userId, amount, payoutMethod, beneficiaryId, commissionPercent, accountCurrency } = req.body;
   if (!userId || !amount || !payoutMethod) {
     return res.status(400).json({ error: "userId, amount, and payoutMethod are required" });
   }
@@ -286,12 +295,19 @@ router.post("/:id/process-payout", authenticate, requireRole("AGENT_PARTNER", "A
     });
   }
 
+  let benCountry: string | undefined;
+  if (beneficiaryId) {
+    const ben = await prisma.beneficiary.findUnique({ where: { id: beneficiaryId } });
+    benCountry = ben?.country;
+  }
+  const destCurrency = await fxService.resolveCurrency(benCountry || "US", payoutMethod, accountCurrency);
   const transfer = await prisma.transfer.create({
     data: {
       userId,
       beneficiaryId: beneficiaryId || null,
       amount: netAmount,
       payoutMethod,
+      currency: destCurrency,
       status: "PENDING_PAYOUT",
       referenceId: generateReferenceNumber(),
     },
@@ -301,6 +317,7 @@ router.post("/:id/process-payout", authenticate, requireRole("AGENT_PARTNER", "A
     data: {
       transferId: transfer.id,
       payoutMethod,
+      currency: destCurrency,
       status: "PENDING",
     },
   });

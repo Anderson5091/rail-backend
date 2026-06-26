@@ -243,11 +243,13 @@ export class AgentService {
         country: string;
         bankName?: string;
         accountNumber?: string;
+        accountCurrency?: string;
         mobileWalletNumber?: string;
         mobileProvider?: string;
         cashPickupLocation?: string;
       };
       commissionPercent: number;
+      currency?: string;
     }
   ) {
     const agent = await prisma.agent.findUnique({
@@ -310,6 +312,7 @@ export class AgentService {
           payoutMethod: payload.payoutMethod,
           bankName: payload.beneficiary.bankName || null,
           accountNumber: payload.beneficiary.accountNumber || null,
+          accountCurrency: payload.beneficiary.accountCurrency || null,
           mobileWalletNumber: payload.beneficiary.mobileWalletNumber || null,
           mobileProvider: payload.beneficiary.mobileProvider || null,
           cashPickupLocation: payload.beneficiary.cashPickupLocation || null,
@@ -322,12 +325,14 @@ export class AgentService {
 
     const referenceId = generateReferenceNumber();
 
+    const currency = payload.currency || "USD";
     const transfer = await prisma.transfer.create({
       data: {
         userId: payload.userId || null,
         beneficiaryId,
         amount: netAmount,
         payoutMethod: payload.payoutMethod,
+        currency,
         status: "PENDING_PAYOUT",
         referenceId,
       },
@@ -337,6 +342,7 @@ export class AgentService {
       data: {
         transferId: transfer.id,
         payoutMethod: payload.payoutMethod,
+        currency,
         status: "PENDING",
       },
     });

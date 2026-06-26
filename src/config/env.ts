@@ -22,6 +22,9 @@ export const ENV = {
   TWILIO_AUTH_TOKEN: process.env.TWILIO_AUTH_TOKEN || "",
   TWILIO_PHONE_NUMBER: process.env.TWILIO_PHONE_NUMBER || "",
 
+  // AllRatesToday (FX) Configuration
+  ART_API_KEY: process.env.ART_API_KEY || "art_live_hpJAZBmeQWsgqr6zg2u0X7tQEnGWMTxS",
+
   // Crossmint Configuration
   CROSSMINT_API_KEY: process.env.CROSSMINT_API_KEY || "",
   CROSSMINT_BASE_URL: process.env.CROSSMINT_BASE_URL || "",

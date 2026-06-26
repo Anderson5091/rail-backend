@@ -99,6 +99,7 @@ model Beneficiary {
   payoutMethod       String
   bankName           String?
   accountNumber      String?
+  accountCurrency    String?
   mobileWalletNumber String?
   mobileProvider     String?
   cashPickupLocation String?
@@ -111,7 +112,10 @@ model FxRate {
   fromCurrency String
   toCurrency   String
   rate         Decimal  @db.Decimal(24, 8)
+  source       String   @default("allratestoday")
   updatedAt    DateTime @updatedAt
+
+  @@unique([fromCurrency, toCurrency])
 }
 
 model FeeRule {
@@ -123,21 +127,22 @@ model FeeRule {
 }
 
 model Transfer {
-  id                String       @id @default(cuid())
-  userId            String?
-  beneficiaryId     String?
-  amount            Decimal      @db.Decimal(24, 8)
-  payoutMethod      String?
-  status            String       @default("DRAFT")
-  fxRate            Decimal?     @db.Decimal(24, 8)
-  fee               Decimal?     @db.Decimal(24, 8)
-  destinationAmount Decimal?     @db.Decimal(24, 8)
-  referenceId       String?      @unique
-  payoutOrderId     String?
-  createdAt         DateTime     @default(now())
-  updatedAt         DateTime     @updatedAt
-  payoutOrder       PayoutOrder?
-  user              User?        @relation(fields: [userId], references: [id])
+  id                  String       @id @default(cuid())
+  userId              String?
+  beneficiaryId       String?
+  amount              Decimal      @db.Decimal(24, 8)
+  payoutMethod        String?
+  currency            String       @default("USD")
+  status              String       @default("DRAFT")
+  fxRate              Decimal?     @db.Decimal(24, 8)
+  fee                 Decimal?     @db.Decimal(24, 8)
+  destinationAmount   Decimal?     @db.Decimal(24, 8)
+  referenceId         String?      @unique
+  payoutOrderId       String?
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
+  payoutOrder         PayoutOrder?
+  user                User?        @relation(fields: [userId], references: [id])
 }
 
 model PayoutOrder {
@@ -145,6 +150,7 @@ model PayoutOrder {
   transferId        String        @unique
   partner           String?
   payoutMethod      String?
+  currency          String        @default("USD")
   status            String        @default("PENDING")
   externalReference String?
   attemptCount      Int           @default(0)

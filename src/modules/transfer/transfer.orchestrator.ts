@@ -9,7 +9,7 @@ import { generateTransactionNumber, generateReferenceNumber } from "../../utils/
 const payoutOrchestrator = new PayoutOrchestrator();
 
 export class TransferOrchestrator {
-  async createTransfer(data: { beneficiaryId: string; amount: number; payoutMethod: string }, userId: string) {
+  async createTransfer(data: { beneficiaryId: string; amount: number; payoutMethod: string; currency?: string }, userId: string) {
     const beneficiary = await prisma.beneficiary.findFirst({
       where: { id: data.beneficiaryId, userId },
     });
@@ -28,12 +28,14 @@ export class TransferOrchestrator {
 
       await ledgerService.debit(wallet.id, data.amount, transactionNumber);
 
+      const currency = data.currency || "USD";
       const t = await prisma.transfer.create({
         data: {
           userId,
           beneficiaryId: data.beneficiaryId,
           amount: data.amount,
           payoutMethod: data.payoutMethod,
+          currency,
           status: "PENDING_PAYOUT",
           referenceId: transactionNumber,
         },
@@ -43,6 +45,7 @@ export class TransferOrchestrator {
         data: {
           transferId: t.id,
           payoutMethod: data.payoutMethod,
+          currency,
           status: "PENDING",
         },
       });
