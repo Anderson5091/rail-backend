@@ -2,6 +2,9 @@
   "name": "quicksend-backend",
   "version": "1.0.0",
   "private": true,
+  "engines": {
+    "node": ">=22.0.0"
+  },
   "scripts": {
     "dev": "tsx prisma/seed.ts && tsx watch src/server.ts",
     "build": "tsc",
