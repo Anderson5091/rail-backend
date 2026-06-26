@@ -532,6 +532,12 @@ export class AgentService {
     today.setHours(0, 0, 0, 0);
     const todayTx = agentTransactions.filter((t) => new Date(t.createdAt) >= today);
 
+    const pendingTransfers = await prisma.transfer.findMany({
+      where: { status: { in: ["PENDING_PAYOUT", "PROCESSING"] } },
+      orderBy: { createdAt: "desc" },
+      take: 20,
+    });
+
     return {
       id: agent.id,
       email: agent.email,
@@ -563,6 +569,16 @@ export class AgentService {
           network: w.network,
           balance: Number(w.balance),
         })),
+      pendingTransfers: pendingTransfers.map((t: any) => ({
+        id: t.id,
+        beneficiaryId: t.beneficiaryId,
+        amount: Number(t.amount),
+        payoutMethod: t.payoutMethod,
+        currency: t.currency,
+        status: t.status,
+        referenceId: t.referenceId,
+        createdAt: t.createdAt,
+      })),
     };
   }
 
