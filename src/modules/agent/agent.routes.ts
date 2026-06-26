@@ -3,6 +3,7 @@ import bcrypt from "bcryptjs";
 import { prisma } from "../../config/database";
 import { authenticate, AuthRequest, requireRole } from "../../middleware/auth";
 import { agentService } from "./agent.service";
+import { generateReferenceNumber } from "../../utils/id-generator";
 import { crossmintService } from "../../services/crossmint.service";
 import { PayoutOrchestrator } from "../payout/payout.orchestrator";
 import { ledgerService } from "../ledger/ledger.service";
@@ -292,7 +293,7 @@ router.post("/:id/process-payout", authenticate, requireRole("AGENT_PARTNER", "A
       amount: netAmount,
       payoutMethod,
       status: "PENDING_PAYOUT",
-      referenceId: `ap_${agentId}_${Date.now()}`,
+      referenceId: generateReferenceNumber(),
     },
   });
 
@@ -328,7 +329,7 @@ router.post("/:id/process-payout", authenticate, requireRole("AGENT_PARTNER", "A
       netAmount,
       userRef: userId,
       status: "COMPLETED",
-      reference: `ap_${agentId}_${Date.now()}`,
+      reference: generateReferenceNumber(),
       metadata: { payoutMethod, beneficiaryId },
     },
   });

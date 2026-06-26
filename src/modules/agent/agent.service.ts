@@ -1,6 +1,7 @@
 import { prisma } from "../../config/database";
 import { ledgerService } from "../ledger/ledger.service";
 import { logger } from "../../utils/logger";
+import { generateReferenceNumber } from "../../utils/id-generator";
 
 interface AgentWalletRow {
   id: string;
@@ -117,7 +118,7 @@ export class AgentService {
         netAmount: netUsdt,
         userRef: userId,
         status: "COMPLETED",
-        reference: `ab_${agentId}_${Date.now()}`,
+        reference: generateReferenceNumber(),
         metadata: { fiatAmount, commissionPercent },
       },
     });
@@ -168,7 +169,7 @@ export class AgentService {
         netAmount,
         userRef: userId,
         status: "COMPLETED",
-        reference: `wd_${agentId}_${Date.now()}`,
+        reference: generateReferenceNumber(),
         metadata: { destinationAddress, fiatEquivalent: netAmount },
       },
     });
@@ -219,7 +220,7 @@ export class AgentService {
         netAmount,
         userRef: userId,
         status: "COMPLETED",
-        reference: `pmt_${agentId}_${Date.now()}`,
+        reference: generateReferenceNumber(),
         metadata: { paymentMethod },
       },
     });
@@ -319,7 +320,7 @@ export class AgentService {
 
     if (!beneficiaryId) throw new Error("beneficiaryId or inline beneficiary details required");
 
-    const referenceId = `at_${agentId}_${Date.now()}`;
+    const referenceId = generateReferenceNumber();
 
     const transfer = await prisma.transfer.create({
       data: {
@@ -432,7 +433,7 @@ export class AgentService {
         netAmount: usdtAmount,
         userRef: partnerAgentId,
         status: "COMPLETED",
-        reference: `topup_${internalAgentId}_${Date.now()}`,
+        reference: generateReferenceNumber(),
         metadata: { targetAgentId: partnerAgentId },
       },
     });
@@ -474,7 +475,7 @@ export class AgentService {
         commission: 0,
         netAmount: ledgerBalance,
         status: "COMPLETED",
-        reference: `comm_wd_${agentId}_${Date.now()}`,
+        reference: generateReferenceNumber(),
         metadata: { fromLedger: true, toWallet: wallet.id },
       },
     });

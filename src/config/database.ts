@@ -1,5 +1,6 @@
 import { PrismaClient } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
+import { generateModelId } from "../utils/id-generator";
 
 const adapter = new PrismaPg(process.env.DATABASE_URL || "");
 
@@ -19,4 +20,29 @@ export interface ExtendedPrismaClient extends PrismaClient {
   agentKpi: any;
 }
 
-export const prisma = prismaRaw as ExtendedPrismaClient;
+const xprisma = (prismaRaw as any).$extends({
+  query: {
+    $allModels: {
+      async create({ model, args, query }: any) {
+        const id = generateModelId(model, args.data);
+        if (id && !args.data.id) {
+          args.data.id = id;
+        }
+        return query(args);
+      },
+      async createMany({ model, args, query }: any) {
+        if (Array.isArray(args.data)) {
+          for (const record of args.data) {
+            if (!record.id) {
+              const id = generateModelId(model, record);
+              if (id) record.id = id;
+            }
+          }
+        }
+        return query(args);
+      },
+    },
+  },
+}) as any;
+
+export const prisma = xprisma as unknown as ExtendedPrismaClient;

@@ -4,14 +4,9 @@ import { ledgerService } from "../ledger/ledger.service";
 import { eventEmitter } from "../events/event.emitter";
 import { PayoutOrchestrator } from "../payout/payout.orchestrator";
 import { logger } from "../../utils/logger";
-import crypto from "crypto";
+import { generateTransactionNumber, generateReferenceNumber } from "../../utils/id-generator";
 
 const payoutOrchestrator = new PayoutOrchestrator();
-
-function generateTransactionNumber(): string {
-  const digits = crypto.randomInt(1000000000, 9999999999).toString();
-  return `QS-${digits}`;
-}
 
 export class TransferOrchestrator {
   async createTransfer(data: { beneficiaryId: string; amount: number; payoutMethod: string }, userId: string) {
