@@ -8,7 +8,7 @@ RUN npx prisma generate
 RUN npm run build
 
 FROM node:22-alpine AS runner
-COPY --from=builder /app/prisma.config.ts ./prisma.config.ts
+WORKDIR /app
 
 WORKDIR /app
 RUN addgroup --system --gid 1001 nodejs && adduser --system --uid 1001 quicksend
