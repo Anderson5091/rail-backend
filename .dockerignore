@@ -2,9 +2,10 @@ node_modules
 dist
 .git
 .gitignore
+README.md
+*.md
 .env
 .env.local
-.env.example
-*.md
+.env.production
 coverage
 tests
