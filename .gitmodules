@@ -1,9 +1,0 @@
-[submodule "web-app"]
-	path = web-app
-	url = https://github.com/Anderson5091/web-app.git
-[submodule "admin-app"]
-	path = admin-app
-	url = https://github.com/Anderson5091/admin-app.git
-[submodule "backend-app"]
-	path = backend-app
-	url = https://github.com/Anderson5091/backend-app.git
