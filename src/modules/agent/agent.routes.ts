@@ -96,13 +96,18 @@ router.post("/create", authenticate, requireRole("SUPER_ADMIN", "OPS"), async (r
 
 router.get("/pending-transfers", authenticate, requireRole("AGENT_PARTNER", "AGENT_INTERNAL"), async (req: AuthRequest, res: Response) => {
   try {
+    const currentAgentId = req.userId;
     const transfers = await prisma.transfer.findMany({
-      where: { status: { in: ["PENDING_PAYOUT", "PROCESSING"] } },
+      where: {
+        status: { in: ["PENDING_PAYOUT", "PROCESSING"] },
+        OR: [
+          { processingAgentId: null },
+          { processingAgentId: currentAgentId }
+        ]
+      },
       orderBy: { createdAt: "desc" },
       take: 50,
     });
-
-    const currentAgentId = req.userId;
 
     res.json(transfers.map((t: any) => ({
       id: t.id,
@@ -115,6 +120,7 @@ router.get("/pending-transfers", authenticate, requireRole("AGENT_PARTNER", "AGE
       referenceId: t.referenceId,
       processingAgentId: t.processingAgentId,
       isMine: t.processingAgentId === currentAgentId,
+      isAvailable: t.processingAgentId === null,
       createdAt: t.createdAt,
     })));
   } catch (err: unknown) {
@@ -418,6 +424,34 @@ router.get("/:id/transactions", authenticate, async (req: AuthRequest, res: Resp
       createdAt: t.createdAt,
     }))
   );
+});
+
+router.post("/:id/claim-transfer", authenticate, requireRole("AGENT_PARTNER", "AGENT_INTERNAL"), async (req: AuthRequest, res: Response) => {
+  try {
+    const { transferId } = req.body;
+    if (!transferId) return res.status(400).json({ error: "transferId is required" });
+
+    const agentId = String(req.params.id);
+    const agent = await prisma.agent.findUnique({ where: { id: agentId } });
+    if (!agent) return res.status(404).json({ error: "Agent not found" });
+
+    const transfer = await prisma.transfer.findUnique({ where: { id: transferId } });
+    if (!transfer) return res.status(404).json({ error: "Transfer not found" });
+    if (transfer.status !== "PENDING_PAYOUT") return res.status(400).json({ error: "Transfer is not in PENDING_PAYOUT status" });
+    if (transfer.processingAgentId && transfer.processingAgentId !== agentId) {
+      return res.status(409).json({ error: "Transfer already claimed by another agent" });
+    }
+
+    await prisma.transfer.update({
+      where: { id: transferId },
+      data: { status: "PROCESSING", processingAgentId: agentId },
+    });
+
+    res.json({ success: true, message: "Transfer claimed successfully", transferId, status: "PROCESSING" });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "Failed to claim transfer";
+    res.status(400).json({ error: message });
+  }
 });
 
 router.post("/:id/execute-payout", authenticate, requireRole("AGENT_PARTNER", "AGENT_INTERNAL"), async (req: AuthRequest, res: Response) => {

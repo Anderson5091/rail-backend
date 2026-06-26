@@ -495,7 +495,13 @@ export class AgentService {
     const todayTx = agentTransactions.filter((t) => new Date(t.createdAt) >= today);
 
     const pendingTransfers = await prisma.transfer.findMany({
-      where: { status: { in: ["PENDING_PAYOUT", "PROCESSING"] } },
+      where: {
+        status: { in: ["PENDING_PAYOUT", "PROCESSING"] },
+        OR: [
+          { processingAgentId: null },
+          { processingAgentId: agentId }
+        ]
+      },
       orderBy: { createdAt: "desc" },
       take: 20,
     });
