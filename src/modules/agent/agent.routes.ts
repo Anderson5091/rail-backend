@@ -406,6 +406,31 @@ router.get("/:id/transactions", authenticate, async (req: AuthRequest, res: Resp
   );
 });
 
+router.get("/pending-transfers", authenticate, requireRole("AGENT_PARTNER", "AGENT_INTERNAL"), async (_req: AuthRequest, res: Response) => {
+  try {
+    const transfers = await prisma.transfer.findMany({
+      where: { status: { in: ["PENDING_PAYOUT", "PROCESSING"] } },
+      orderBy: { createdAt: "desc" },
+      take: 50,
+    });
+
+    res.json(transfers.map((t: any) => ({
+      id: t.id,
+      amount: Number(t.amount),
+      fee: Number(t.fee || 0),
+      destinationAmount: Number(t.destinationAmount || 0),
+      payoutMethod: t.payoutMethod,
+      currency: t.currency,
+      status: t.status,
+      referenceId: t.referenceId,
+      createdAt: t.createdAt,
+    })));
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "Failed to fetch pending transfers";
+    res.status(400).json({ error: message });
+  }
+});
+
 router.post("/:id/execute-payout", authenticate, requireRole("AGENT_PARTNER", "AGENT_INTERNAL"), async (req: AuthRequest, res: Response) => {
   try {
     const { transferId } = req.body;
