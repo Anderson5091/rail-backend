@@ -406,4 +406,39 @@ router.get("/:id/transactions", authenticate, async (req: AuthRequest, res: Resp
   );
 });
 
+router.post("/:id/execute-payout", authenticate, requireRole("AGENT_PARTNER", "AGENT_INTERNAL"), async (req: AuthRequest, res: Response) => {
+  try {
+    const { transferId } = req.body;
+    if (!transferId) return res.status(400).json({ error: "transferId is required" });
+
+    const transfer = await prisma.transfer.findUnique({ where: { id: transferId } });
+    if (!transfer) return res.status(404).json({ error: "Transfer not found" });
+    if (transfer.status !== "PENDING_PAYOUT") return res.status(400).json({ error: "Transfer is not in PENDING_PAYOUT status" });
+
+    const agentId = String(req.params.id);
+    const agent = await prisma.agent.findUnique({ where: { id: agentId } });
+    if (!agent) return res.status(404).json({ error: "Agent not found" });
+
+    await prisma.transfer.update({
+      where: { id: transferId },
+      data: { status: "PROCESSING" },
+    });
+
+    const payoutOrchestrator = new (await import("../payout/payout.orchestrator")).PayoutOrchestrator();
+    payoutOrchestrator.execute({
+      id: transfer.id,
+      payoutMethod: transfer.payoutMethod || "CASH_PICKUP",
+      amount: Number(transfer.amount),
+      beneficiaryId: transfer.beneficiaryId || undefined,
+    }).catch((err: Error) => {
+      console.error(`[EXECUTE_PAYOUT] Auto-payout failed for transfer ${transfer.id}:`, err.message);
+    });
+
+    res.json({ success: true, message: "Payout triggered", transferId });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "Failed to execute payout";
+    res.status(400).json({ error: message });
+  }
+});
+
 export { router as agentRoutes };
