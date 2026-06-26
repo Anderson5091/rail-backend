@@ -5,13 +5,11 @@ import { authenticate, AuthRequest, requireRole } from "../../middleware/auth";
 import { agentService } from "./agent.service";
 import { generateReferenceNumber } from "../../utils/id-generator";
 import { crossmintService } from "../../services/crossmint.service";
-import { PayoutOrchestrator } from "../payout/payout.orchestrator";
 import { ledgerService } from "../ledger/ledger.service";
 import { fxService } from "../fx/fx.service";
 import type { ChainType } from "../../services/crossmint.service";
 
 const router = Router();
-const payoutOrchestrator = new PayoutOrchestrator();
 
 router.post("/create", authenticate, requireRole("SUPER_ADMIN", "OPS"), async (req: AuthRequest, res: Response) => {
   const { email, password, fullName, phone, type } = req.body;
@@ -250,15 +248,6 @@ router.post("/:id/transfer", authenticate, requireRole("AGENT_PARTNER", "AGENT_I
       currency,
     });
 
-    payoutOrchestrator.execute({
-      id: result.transfer.id,
-      payoutMethod,
-      amount: Number(result.transfer.amount),
-      beneficiaryId: result.transfer.beneficiaryId,
-    }).catch((err: Error) => {
-      console.error(`[AGENT_TRANSFER] Auto-payout failed for transfer ${result.transfer.id}:`, err.message);
-    });
-
     res.json(result.agentTx);
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Transfer failed";
@@ -352,10 +341,6 @@ router.post("/:id/process-payout", authenticate, requireRole("AGENT_PARTNER", "A
   });
 
   await agentService.recordKpi(agentId, Number(amount), commission);
-
-  payoutOrchestrator.execute({ id: transfer.id, payoutMethod, amount: netAmount, beneficiaryId }).catch((err) => {
-    console.error(`[AGENT_PAYOUT] Auto-payout failed for transfer ${transfer.id}:`, err.message);
-  });
 
   res.json(agentTx);
 });
