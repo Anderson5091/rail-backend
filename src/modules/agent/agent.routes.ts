@@ -129,6 +129,54 @@ router.get("/pending-transfers", authenticate, requireRole("AGENT_PARTNER", "AGE
   }
 });
 
+router.get("/pending-transfer/:referenceId", authenticate, requireRole("AGENT_PARTNER", "AGENT_INTERNAL"), async (req: AuthRequest, res: Response) => {
+  try {
+    const transfer = await prisma.transfer.findFirst({
+      where: { referenceId: req.params.referenceId },
+      include: { user: { select: { id: true, email: true, fullName: true, phone: true } } },
+    });
+
+    if (!transfer) {
+      return res.status(404).json({ error: "Transfer not found" });
+    }
+
+    let beneficiary = null;
+    if (transfer.beneficiaryId) {
+      beneficiary = await prisma.beneficiary.findUnique({
+        where: { id: transfer.beneficiaryId },
+      });
+    }
+
+    res.json({
+      id: transfer.id,
+      referenceId: transfer.referenceId,
+      amount: Number(transfer.amount),
+      fee: Number(transfer.fee || 0),
+      destinationAmount: Number(transfer.destinationAmount || 0),
+      payoutMethod: transfer.payoutMethod,
+      currency: transfer.currency,
+      status: transfer.status,
+      processingAgentId: transfer.processingAgentId,
+      createdAt: transfer.createdAt,
+      sender: transfer.user,
+      beneficiary: beneficiary ? {
+        id: beneficiary.id,
+        fullName: beneficiary.fullName,
+        country: beneficiary.country,
+        bankName: beneficiary.bankName,
+        accountNumber: beneficiary.accountNumber,
+        accountCurrency: beneficiary.accountCurrency,
+        mobileWalletNumber: beneficiary.mobileWalletNumber,
+        mobileProvider: beneficiary.mobileProvider,
+        cashPickupLocation: beneficiary.cashPickupLocation,
+      } : null,
+    });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "Failed to fetch transfer detail";
+    res.status(400).json({ error: message });
+  }
+});
+
 router.get("/list", authenticate, requireRole("SUPER_ADMIN", "OPS", "TREASURY"), async (_req: AuthRequest, res: Response) => {
   const agents = await prisma.agent.findMany({
     include: {
