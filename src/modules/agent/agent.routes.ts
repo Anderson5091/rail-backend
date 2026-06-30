@@ -284,27 +284,6 @@ router.post("/:id/withdraw", authenticate, requireRole("AGENT_PARTNER", "AGENT_I
   }
 });
 
-router.post("/:id/process-payment", authenticate, requireRole("AGENT_PARTNER", "AGENT_INTERNAL"), async (req: AuthRequest, res: Response) => {
-  try {
-    const { userId, amount, paymentMethod, commissionPercent } = req.body;
-    if (!userId || !amount || !paymentMethod) {
-      return res.status(400).json({ error: "userId, amount, and paymentMethod are required" });
-    }
-
-    const result = await agentService.processGlobalPayment(
-      String(req.params.id),
-      userId,
-      amount,
-      paymentMethod,
-      commissionPercent || 0
-    );
-    res.json(result);
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Payment failed";
-    res.status(400).json({ error: message });
-  }
-});
-
 router.post("/topup-partner", authenticate, requireRole("AGENT_INTERNAL"), async (req: AuthRequest, res: Response) => {
   try {
     const { partnerAgentId, usdtAmount } = req.body;

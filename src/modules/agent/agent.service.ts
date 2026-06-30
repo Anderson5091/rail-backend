@@ -183,57 +183,6 @@ export class AgentService {
     return tx;
   }
 
-  async processGlobalPayment(
-    agentId: string,
-    userId: string,
-    amount: number,
-    paymentMethod: string,
-    commissionPercent: number
-  ) {
-    const agent = await prisma.agent.findUnique({
-      where: { id: agentId },
-      include: { wallets: true },
-    });
-    if (!agent) throw new Error("Agent not found");
-
-    const commission = (amount * commissionPercent) / 100;
-    const netAmount = amount - commission;
-
-    const userWallet = await prisma.wallet.findFirst({ where: { userId } });
-    if (!userWallet) throw new Error("User wallet not found");
-
-    const balance = await ledgerService.getBalance(userWallet.id);
-    if (balance < amount) throw new Error("Insufficient user balance");
-
-    await ledgerService.debit(userWallet.id, amount, `agent_payment_${agentId}_${Date.now()}`);
-
-    if (commission > 0) {
-      await prisma.agent.update({
-        where: { id: agentId },
-        data: { commissionLedger: { increment: commission } },
-      });
-    }
-
-    const tx = await prisma.agentTransaction.create({
-      data: {
-        agentId,
-        type: "PAYMENT",
-        amount,
-        commission,
-        netAmount,
-        userRef: userId,
-        status: "COMPLETED",
-        reference: generateReferenceNumber(),
-        metadata: { paymentMethod },
-      },
-    });
-
-    await this.recordKpi(agentId, amount, commission);
-
-    logger.info(`[Agent] Agent ${agentId} processed payment for user ${userId} via ${paymentMethod}`);
-    return tx;
-  }
-
   async processTransfer(
     agentId: string,
     payload: {
