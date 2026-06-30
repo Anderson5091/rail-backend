@@ -136,7 +136,6 @@ export class AgentService {
     agentId: string,
     userId: string,
     amount: number,
-    destinationAddress: string,
     commissionPercent: number,
     destinationType?: "OFFCHAIN" | "MAIN"
   ) {
@@ -181,7 +180,7 @@ export class AgentService {
         userRef: userId,
         status: "COMPLETED",
         reference: generateReferenceNumber(),
-        metadata: { destinationAddress, fiatEquivalent: netAmount, destinationType: destinationType || "OFFCHAIN" },
+        metadata: { fiatEquivalent: netAmount, destinationType: destinationType || "OFFCHAIN" },
       },
     });
 
