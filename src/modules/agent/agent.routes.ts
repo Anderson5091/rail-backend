@@ -442,6 +442,20 @@ router.post("/:id/withdraw-commission", authenticate, requireRole("AGENT_PARTNER
   }
 });
 
+router.post("/:id/swap-offchain", authenticate, requireRole("AGENT_PARTNER"), async (req: AuthRequest, res: Response) => {
+  try {
+    const { direction, amount } = req.body;
+    if (!direction || !["TO_MAIN", "TO_OFFCHAIN"].includes(direction)) {
+      return res.status(400).json({ error: "direction must be TO_MAIN or TO_OFFCHAIN" });
+    }
+    const result = await agentService.swapOffchain(String(req.params.id), direction, amount ? Number(amount) : undefined);
+    res.json(result);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "Swap failed";
+    res.status(400).json({ error: message });
+  }
+});
+
 router.get("/kpi/:id/", authenticate, async (req: AuthRequest, res: Response) => {
   const { period } = req.query;
   const kpi = await agentService.getAgentKpi(

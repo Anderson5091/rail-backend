@@ -467,6 +467,7 @@ model Agent {
   kpiRating        Float?
   totalRewards     Decimal            @default(0) @db.Decimal(24, 8)
   commissionLedger Decimal            @default(0) @db.Decimal(24, 8)
+  offchainLedger   Decimal            @default(0) @db.Decimal(24, 8)
   createdAt        DateTime           @default(now())
   updatedAt        DateTime           @updatedAt
   kpiEntries       AgentKpi[]

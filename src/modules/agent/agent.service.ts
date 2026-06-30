@@ -403,6 +403,81 @@ export class AgentService {
     return tx;
   }
 
+  async swapOffchain(agentId: string, direction: "TO_MAIN" | "TO_OFFCHAIN", amount?: number) {
+    const agent = await prisma.agent.findUnique({
+      where: { id: agentId },
+      include: { wallets: true },
+    });
+    if (!agent) throw new Error("Agent not found");
+    if (agent.type !== "PARTNER") throw new Error("Only partner agents can swap offchain funds");
+
+    const wallet = (agent.wallets as AgentWalletRow[]).find((w) => w.walletType === "MAIN" || w.walletType === "BASE_TREASURY");
+    if (!wallet) throw new Error("Agent wallet not found");
+
+    const offchainBalance = Number(agent.offchainLedger);
+    const mainBalance = Number(wallet.balance);
+
+    if (direction === "TO_MAIN") {
+      const swapAmount = amount ?? offchainBalance;
+      if (swapAmount <= 0) throw new Error("Invalid swap amount");
+      if (offchainBalance < swapAmount) throw new Error("Insufficient offchain balance");
+
+      await prisma.agent.update({
+        where: { id: agentId },
+        data: { offchainLedger: { decrement: swapAmount } },
+      });
+      await prisma.agentWallet.update({
+        where: { id: wallet.id },
+        data: { balance: { increment: swapAmount } },
+      });
+
+      const tx = await prisma.agentTransaction.create({
+        data: {
+          agentId,
+          type: "OFFCHAIN_SWAP",
+          amount: swapAmount,
+          commission: 0,
+          netAmount: swapAmount,
+          status: "COMPLETED",
+          reference: generateReferenceNumber(),
+          metadata: { direction: "TO_MAIN", fromLedger: true, toWallet: wallet.id },
+        },
+      });
+
+      logger.info(`[Agent] Agent ${agentId} swapped ${swapAmount} USDT from offchain to main wallet`);
+      return tx;
+    } else {
+      const swapAmount = amount ?? mainBalance;
+      if (swapAmount <= 0) throw new Error("Invalid swap amount");
+      if (mainBalance < swapAmount) throw new Error("Insufficient main wallet balance");
+
+      await prisma.agentWallet.update({
+        where: { id: wallet.id },
+        data: { balance: { decrement: swapAmount } },
+      });
+      await prisma.agent.update({
+        where: { id: agentId },
+        data: { offchainLedger: { increment: swapAmount } },
+      });
+
+      const tx = await prisma.agentTransaction.create({
+        data: {
+          agentId,
+          type: "OFFCHAIN_SWAP",
+          amount: swapAmount,
+          commission: 0,
+          netAmount: swapAmount,
+          status: "COMPLETED",
+          reference: generateReferenceNumber(),
+          metadata: { direction: "TO_OFFCHAIN", fromWallet: wallet.id, toLedger: true },
+        },
+      });
+
+      logger.info(`[Agent] Agent ${agentId} swapped ${swapAmount} USDT from main to offchain wallet`);
+      return tx;
+    }
+  }
+
   async getAgentKpi(agentId: string, period?: string) {
     const where: { agentId: string; period?: string } = { agentId };
     if (period) where.period = period;
@@ -466,6 +541,7 @@ export class AgentService {
       kpiRating: agent.kpiRating,
       totalRewards: Number(agent.totalRewards),
       commissionLedgerBalance: Number(agent.commissionLedger),
+      offchainLedgerBalance: Number(agent.offchainLedger),
       walletBalance: wallet ? Number(wallet.balance) : null,
       todayVolume: todayTx.reduce((sum: number, t: AgentTransactionRow) => sum + Number(t.amount), 0),
       todayCommission: todayTx.reduce((sum: number, t: AgentTransactionRow) => sum + Number(t.commission), 0),
@@ -478,6 +554,7 @@ export class AgentService {
         netAmount: Number(t.netAmount),
         userRef: t.userRef,
         status: t.status,
+        metadata: t.metadata,
         createdAt: t.createdAt,
       })),
       wallets: agentWallets
