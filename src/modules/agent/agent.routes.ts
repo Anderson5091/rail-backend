@@ -265,7 +265,7 @@ router.post("/:id/add-balance", authenticate, requireRole("AGENT_PARTNER", "AGEN
 
 router.post("/:id/withdraw", authenticate, requireRole("AGENT_PARTNER", "AGENT_INTERNAL"), async (req: AuthRequest, res: Response) => {
   try {
-    const { userId, amount, destinationAddress, commissionPercent } = req.body;
+    const { userId, amount, destinationAddress, commissionPercent, destinationType } = req.body;
     if (!userId || !amount || !destinationAddress) {
       return res.status(400).json({ error: "userId, amount, and destinationAddress are required" });
     }
@@ -275,7 +275,8 @@ router.post("/:id/withdraw", authenticate, requireRole("AGENT_PARTNER", "AGENT_I
       userId,
       amount,
       destinationAddress,
-      commissionPercent || 0
+      commissionPercent || 0,
+      destinationType
     );
     res.json(result);
   } catch (err: unknown) {

@@ -137,7 +137,8 @@ export class AgentService {
     userId: string,
     amount: number,
     destinationAddress: string,
-    commissionPercent: number
+    commissionPercent: number,
+    destinationType?: "OFFCHAIN" | "MAIN"
   ) {
     const agent = await prisma.agent.findUnique({
       where: { id: agentId },
@@ -163,6 +164,13 @@ export class AgentService {
       });
     }
 
+    if (agent.type === "PARTNER") {
+      await prisma.agent.update({
+        where: { id: agentId },
+        data: { offchainLedger: { increment: netAmount } },
+      });
+    }
+
     const tx = await prisma.agentTransaction.create({
       data: {
         agentId,
@@ -173,9 +181,13 @@ export class AgentService {
         userRef: userId,
         status: "COMPLETED",
         reference: generateReferenceNumber(),
-        metadata: { destinationAddress, fiatEquivalent: netAmount },
+        metadata: { destinationAddress, fiatEquivalent: netAmount, destinationType: destinationType || "OFFCHAIN" },
       },
     });
+
+    if (agent.type === "PARTNER" && destinationType === "MAIN") {
+      await this.swapOffchain(agentId, "TO_MAIN", netAmount);
+    }
 
     await this.recordKpi(agentId, amount, commission);
 
