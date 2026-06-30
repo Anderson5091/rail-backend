@@ -243,65 +243,85 @@ router.post("/:id/upgrade-wallet", authenticate, requireRole("SUPER_ADMIN", "OPS
 });
 
 router.post("/:id/add-balance", authenticate, requireRole("AGENT_PARTNER", "AGENT_INTERNAL"), async (req: AuthRequest, res: Response) => {
-  const { userId, fiatAmount, usdtAmount, commissionPercent } = req.body;
-  if (!userId || !fiatAmount || !usdtAmount) {
-    return res.status(400).json({ error: "userId, fiatAmount, and usdtAmount are required" });
-  }
+  try {
+    const { userId, fiatAmount, usdtAmount, commissionPercent } = req.body;
+    if (!userId || !fiatAmount || !usdtAmount) {
+      return res.status(400).json({ error: "userId, fiatAmount, and usdtAmount are required" });
+    }
 
-  const result = await agentService.addUserBalance(
-    String(req.params.id),
-    userId,
-    fiatAmount,
-    usdtAmount,
-    commissionPercent || 0
-  );
-  res.json(result);
+    const result = await agentService.addUserBalance(
+      String(req.params.id),
+      userId,
+      fiatAmount,
+      usdtAmount,
+      commissionPercent || 0
+    );
+    res.json(result);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "Failed to add balance";
+    res.status(400).json({ error: message });
+  }
 });
 
 router.post("/:id/withdraw", authenticate, requireRole("AGENT_PARTNER", "AGENT_INTERNAL"), async (req: AuthRequest, res: Response) => {
-  const { userId, amount, destinationAddress, commissionPercent } = req.body;
-  if (!userId || !amount || !destinationAddress) {
-    return res.status(400).json({ error: "userId, amount, and destinationAddress are required" });
-  }
+  try {
+    const { userId, amount, destinationAddress, commissionPercent } = req.body;
+    if (!userId || !amount || !destinationAddress) {
+      return res.status(400).json({ error: "userId, amount, and destinationAddress are required" });
+    }
 
-  const result = await agentService.executeWithdrawal(
-    String(req.params.id),
-    userId,
-    amount,
-    destinationAddress,
-    commissionPercent || 0
-  );
-  res.json(result);
+    const result = await agentService.executeWithdrawal(
+      String(req.params.id),
+      userId,
+      amount,
+      destinationAddress,
+      commissionPercent || 0
+    );
+    res.json(result);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "Withdrawal failed";
+    res.status(400).json({ error: message });
+  }
 });
 
 router.post("/:id/process-payment", authenticate, requireRole("AGENT_PARTNER", "AGENT_INTERNAL"), async (req: AuthRequest, res: Response) => {
-  const { userId, amount, paymentMethod, commissionPercent } = req.body;
-  if (!userId || !amount || !paymentMethod) {
-    return res.status(400).json({ error: "userId, amount, and paymentMethod are required" });
-  }
+  try {
+    const { userId, amount, paymentMethod, commissionPercent } = req.body;
+    if (!userId || !amount || !paymentMethod) {
+      return res.status(400).json({ error: "userId, amount, and paymentMethod are required" });
+    }
 
-  const result = await agentService.processGlobalPayment(
-    String(req.params.id),
-    userId,
-    amount,
-    paymentMethod,
-    commissionPercent || 0
-  );
-  res.json(result);
+    const result = await agentService.processGlobalPayment(
+      String(req.params.id),
+      userId,
+      amount,
+      paymentMethod,
+      commissionPercent || 0
+    );
+    res.json(result);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "Payment failed";
+    res.status(400).json({ error: message });
+  }
 });
 
 router.post("/topup-partner", authenticate, requireRole("AGENT_INTERNAL"), async (req: AuthRequest, res: Response) => {
-  const { partnerAgentId, usdtAmount } = req.body;
-  if (!partnerAgentId || !usdtAmount) {
-    return res.status(400).json({ error: "partnerAgentId and usdtAmount are required" });
-  }
+  try {
+    const { partnerAgentId, usdtAmount } = req.body;
+    if (!partnerAgentId || !usdtAmount) {
+      return res.status(400).json({ error: "partnerAgentId and usdtAmount are required" });
+    }
 
-  const result = await agentService.topUpPartnerBalance(
-    req.userId!,
-    partnerAgentId,
-    usdtAmount
-  );
-  res.json(result);
+    const result = await agentService.topUpPartnerBalance(
+      req.userId!,
+      partnerAgentId,
+      usdtAmount
+    );
+    res.json(result);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "Top-up failed";
+    res.status(400).json({ error: message });
+  }
 });
 
 router.post("/:id/transfer", authenticate, requireRole("AGENT_PARTNER", "AGENT_INTERNAL"), async (req: AuthRequest, res: Response) => {
@@ -340,92 +360,97 @@ router.post("/:id/transfer", authenticate, requireRole("AGENT_PARTNER", "AGENT_I
 });
 
 router.post("/:id/process-payout", authenticate, requireRole("AGENT_PARTNER", "AGENT_INTERNAL"), async (req: AuthRequest, res: Response) => {
-  const { userId, amount, payoutMethod, beneficiaryId, commissionPercent, accountCurrency } = req.body;
-  if (!userId || !amount || !payoutMethod) {
-    return res.status(400).json({ error: "userId, amount, and payoutMethod are required" });
-  }
+  try {
+    const { userId, amount, payoutMethod, beneficiaryId, commissionPercent, accountCurrency } = req.body;
+    if (!userId || !amount || !payoutMethod) {
+      return res.status(400).json({ error: "userId, amount, and payoutMethod are required" });
+    }
 
-  const agentId = String(req.params.id);
-  const agent = await prisma.agent.findUnique({ where: { id: agentId } });
-  if (!agent) return res.status(404).json({ error: "Agent not found" });
+    const agentId = String(req.params.id);
+    const agent = await prisma.agent.findUnique({ where: { id: agentId } });
+    if (!agent) return res.status(404).json({ error: "Agent not found" });
 
-  const wallet = await prisma.wallet.findFirst({ where: { userId } });
-  if (!wallet) return res.status(400).json({ error: "User wallet not found" });
+    const wallet = await prisma.wallet.findFirst({ where: { userId } });
+    if (!wallet) return res.status(400).json({ error: "User wallet not found" });
 
-  const balance = await ledgerService.getBalance(wallet.id);
-  if (balance < Number(amount)) return res.status(400).json({ error: "Insufficient user balance" });
+    const balance = await ledgerService.getBalance(wallet.id);
+    if (balance < Number(amount)) return res.status(400).json({ error: "Insufficient user balance" });
 
-  const commission = (Number(amount) * Number(commissionPercent || 0)) / 100;
-  const netAmount = Number(amount) - commission;
+    const commission = (Number(amount) * Number(commissionPercent || 0)) / 100;
+    const netAmount = Number(amount) - commission;
 
-  await ledgerService.debit(wallet.id, Number(amount), `agent_payout_${agentId}_${Date.now()}`);
+    await ledgerService.debit(wallet.id, Number(amount), `agent_payout_${agentId}_${Date.now()}`);
 
-  if (commission > 0) {
-    await prisma.agent.update({
-      where: { id: agentId },
-      data: { commissionLedger: { increment: commission } },
+    if (commission > 0) {
+      await prisma.agent.update({
+        where: { id: agentId },
+        data: { commissionLedger: { increment: commission } },
+      });
+    }
+
+    let benCountry: string | undefined;
+    if (beneficiaryId) {
+      const ben = await prisma.beneficiary.findUnique({ where: { id: beneficiaryId } });
+      benCountry = ben?.country;
+    }
+    const destCurrency = await fxService.resolveCurrency(benCountry || "US", payoutMethod, accountCurrency);
+    const transfer = await prisma.transfer.create({
+      data: {
+        userId,
+        beneficiaryId: beneficiaryId || null,
+        amount: netAmount,
+        payoutMethod,
+        currency: destCurrency,
+        status: "PENDING_PAYOUT",
+        referenceId: generateReferenceNumber(),
+      },
     });
+
+    const payoutOrder = await prisma.payoutOrder.create({
+      data: {
+        transferId: transfer.id,
+        payoutMethod,
+        currency: destCurrency,
+        status: "PENDING",
+      },
+    });
+
+    await prisma.transfer.update({
+      where: { id: transfer.id },
+      data: { payoutOrderId: payoutOrder.id },
+    });
+
+    await prisma.walletTransaction.create({
+      data: {
+        walletId: wallet.id,
+        type: "AGENT_PAYOUT",
+        amount: netAmount,
+        status: "PENDING",
+        payoutOrderId: payoutOrder.id,
+      },
+    });
+
+    const agentTx = await prisma.agentTransaction.create({
+      data: {
+        agentId,
+        type: "PAYOUT",
+        amount: Number(amount),
+        commission,
+        netAmount,
+        userRef: userId,
+        status: "COMPLETED",
+        reference: generateReferenceNumber(),
+        metadata: { payoutMethod, beneficiaryId },
+      },
+    });
+
+    await agentService.recordKpi(agentId, Number(amount), commission);
+
+    res.json(agentTx);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "Payout failed";
+    res.status(400).json({ error: message });
   }
-
-  let benCountry: string | undefined;
-  if (beneficiaryId) {
-    const ben = await prisma.beneficiary.findUnique({ where: { id: beneficiaryId } });
-    benCountry = ben?.country;
-  }
-  const destCurrency = await fxService.resolveCurrency(benCountry || "US", payoutMethod, accountCurrency);
-  const transfer = await prisma.transfer.create({
-    data: {
-      userId,
-      beneficiaryId: beneficiaryId || null,
-      amount: netAmount,
-      payoutMethod,
-      currency: destCurrency,
-      status: "PENDING_PAYOUT",
-      referenceId: generateReferenceNumber(),
-    },
-  });
-
-  const payoutOrder = await prisma.payoutOrder.create({
-    data: {
-      transferId: transfer.id,
-      payoutMethod,
-      currency: destCurrency,
-      status: "PENDING",
-    },
-  });
-
-  await prisma.transfer.update({
-    where: { id: transfer.id },
-    data: { payoutOrderId: payoutOrder.id },
-  });
-
-  await prisma.walletTransaction.create({
-    data: {
-      walletId: wallet.id,
-      type: "AGENT_PAYOUT",
-      amount: netAmount,
-      status: "PENDING",
-      payoutOrderId: payoutOrder.id,
-    },
-  });
-
-  const agentTx = await prisma.agentTransaction.create({
-    data: {
-      agentId,
-      type: "PAYOUT",
-      amount: Number(amount),
-      commission,
-      netAmount,
-      userRef: userId,
-      status: "COMPLETED",
-      reference: generateReferenceNumber(),
-      metadata: { payoutMethod, beneficiaryId },
-    },
-  });
-
-  await agentService.recordKpi(agentId, Number(amount), commission);
-
-  res.json(agentTx);
 });
 
 router.post("/:id/withdraw-commission", authenticate, requireRole("AGENT_PARTNER", "AGENT_INTERNAL"), async (req: AuthRequest, res: Response) => {
