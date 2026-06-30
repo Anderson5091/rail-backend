@@ -474,6 +474,83 @@ router.get("/:id/transactions", authenticate, async (req: AuthRequest, res: Resp
   );
 });
 
+router.get("/:id/recent-deposits", authenticate, requireRole("AGENT_PARTNER", "AGENT_INTERNAL"), async (req: AuthRequest, res: Response) => {
+  try {
+    const deposits = await prisma.agentTransaction.findMany({
+      where: { agentId: String(req.params.id), type: "ADD_BALANCE" },
+      orderBy: { createdAt: "desc" },
+      take: 10,
+    });
+
+    const userIds = deposits.map((d: any) => d.userRef).filter(Boolean) as string[];
+    const users = userIds.length > 0
+      ? await prisma.user.findMany({
+          where: { id: { in: userIds } },
+          select: { id: true, email: true, fullName: true, phone: true },
+        })
+      : [];
+    const userMap = new Map<string, { id: string; email: string; fullName: string | null; phone: string | null }>(
+      users.map((u: { id: string; email: string; fullName: string | null; phone: string | null }) => [u.id, u])
+    );
+
+    res.json(deposits.map((d: any) => {
+      const u = userMap.get(d.userRef);
+      return {
+        id: d.id,
+        amount: Number(d.amount),
+        netAmount: Number(d.netAmount),
+        commission: Number(d.commission),
+        userRef: d.userRef,
+        reference: d.reference,
+        user: u ? { fullName: u.fullName, email: u.email, phone: u.phone } : null,
+        createdAt: d.createdAt,
+      };
+    }));
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "Failed to fetch recent deposits";
+    res.status(400).json({ error: message });
+  }
+});
+
+router.get("/:id/recent-withdrawals", authenticate, requireRole("AGENT_PARTNER", "AGENT_INTERNAL"), async (req: AuthRequest, res: Response) => {
+  try {
+    const withdrawals = await prisma.agentTransaction.findMany({
+      where: { agentId: String(req.params.id), type: "WITHDRAW" },
+      orderBy: { createdAt: "desc" },
+      take: 10,
+    });
+
+    const userIds = withdrawals.map((d: any) => d.userRef).filter(Boolean) as string[];
+    const users = userIds.length > 0
+      ? await prisma.user.findMany({
+          where: { id: { in: userIds } },
+          select: { id: true, email: true, fullName: true, phone: true },
+        })
+      : [];
+    const userMap = new Map<string, { id: string; email: string; fullName: string | null; phone: string | null }>(
+      users.map((u: { id: string; email: string; fullName: string | null; phone: string | null }) => [u.id, u])
+    );
+
+    res.json(withdrawals.map((d: any) => {
+      const u = userMap.get(d.userRef);
+      return {
+        id: d.id,
+        amount: Number(d.amount),
+        netAmount: Number(d.netAmount),
+        commission: Number(d.commission),
+        userRef: d.userRef,
+        reference: d.reference,
+        metadata: d.metadata,
+        user: u ? { fullName: u.fullName, email: u.email, phone: u.phone } : null,
+        createdAt: d.createdAt,
+      };
+    }));
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "Failed to fetch recent withdrawals";
+    res.status(400).json({ error: message });
+  }
+});
+
 router.post("/:id/claim-transfer", authenticate, requireRole("AGENT_PARTNER", "AGENT_INTERNAL"), async (req: AuthRequest, res: Response) => {
   try {
     const { transferId } = req.body;
@@ -587,6 +664,25 @@ router.post("/:id/confirm-payout", authenticate, requireRole("AGENT_PARTNER", "A
     res.json({ success: true, message: "Payout confirmed and completed", transferId });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Failed to confirm payout";
+    res.status(400).json({ error: message });
+  }
+});
+
+router.post("/lookup-user", authenticate, requireRole("AGENT_PARTNER", "AGENT_INTERNAL"), async (req: AuthRequest, res: Response) => {
+  try {
+    const { identifier } = req.body;
+    if (!identifier) {
+      return res.status(400).json({ error: "identifier is required" });
+    }
+
+    const user = await agentService.lookupUser(identifier);
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    res.json(user);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "Failed to look up user";
     res.status(400).json({ error: message });
   }
 });

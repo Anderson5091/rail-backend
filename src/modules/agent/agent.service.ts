@@ -674,6 +674,25 @@ export class AgentService {
       { key: "MONTHLY", start: monthStart, end: monthEnd },
     ];
   }
+
+  async lookupUser(identifier: string) {
+    const user = await prisma.user.findFirst({
+      where: {
+        OR: [
+          { id: identifier },
+          { email: identifier },
+          { phone: identifier },
+        ],
+      },
+      select: {
+        id: true,
+        email: true,
+        fullName: true,
+        phone: true,
+      },
+    });
+    return user;
+  }
 }
 
 export const agentService = new AgentService();
