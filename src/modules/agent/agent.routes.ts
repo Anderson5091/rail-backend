@@ -305,7 +305,7 @@ router.post("/topup-partner", authenticate, requireRole("AGENT_INTERNAL"), async
 
 router.post("/:id/transfer", authenticate, requireRole("AGENT_PARTNER", "AGENT_INTERNAL"), async (req: AuthRequest, res: Response) => {
   try {
-    const { userId, amount, payoutMethod, beneficiaryId, beneficiary, commissionPercent, accountCurrency } = req.body;
+    const { userId, amount, payoutMethod, beneficiaryId, beneficiary, commissionPercent, accountCurrency, debitUserWallet } = req.body;
     if (!amount || !payoutMethod) {
       return res.status(400).json({ error: "amount, and payoutMethod are required" });
     }
@@ -328,6 +328,7 @@ router.post("/:id/transfer", authenticate, requireRole("AGENT_PARTNER", "AGENT_I
       beneficiary,
       commissionPercent: Number(commissionPercent || 0),
       currency,
+      debitUserWallet: !!debitUserWallet,
     });
 
     res.json(result.agentTx);

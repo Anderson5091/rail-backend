@@ -213,6 +213,7 @@ export class AgentService {
       };
       commissionPercent: number;
       currency?: string;
+      debitUserWallet?: boolean;
     }
   ) {
     const agent = await prisma.agent.findUnique({
@@ -223,6 +224,7 @@ export class AgentService {
 
     const commission = (payload.amount * payload.commissionPercent) / 100;
     const netAmount = payload.amount - commission;
+    const shouldDebitAgent = !payload.debitUserWallet || !payload.userId;
 
     if (agent.type === "INTERNAL") {
       const hotWallet = await prisma.treasuryWallet.findFirst({ where: { walletType: "HOT" } });
@@ -271,7 +273,7 @@ export class AgentService {
       beneficiaryId: payload.beneficiaryId,
       beneficiary: payload.beneficiary,
       currency: payload.currency,
-      skipWalletDebit: true,
+      skipWalletDebit: shouldDebitAgent,
     });
 
     const agentTx = await prisma.agentTransaction.create({
@@ -290,6 +292,7 @@ export class AgentService {
           isRegistered: !!payload.userId,
           senderAgentId: agentId,
           senderAgentEmail: agent.email,
+          debitUserWallet: !shouldDebitAgent,
         },
       },
     });
