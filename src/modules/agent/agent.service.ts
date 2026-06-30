@@ -321,13 +321,15 @@ export class AgentService {
         amount: payload.amount,
         commission,
         netAmount,
-        userRef: payload.userId || null,
+        userRef: payload.userId || agentId,
         status: "COMPLETED",
         reference: transfer.referenceId,
         metadata: {
           payoutMethod: payload.payoutMethod,
           beneficiaryId: transfer.beneficiaryId,
           isRegistered: !!payload.userId,
+          senderAgentId: agentId,
+          senderAgentEmail: agent.email,
         },
       },
     });
