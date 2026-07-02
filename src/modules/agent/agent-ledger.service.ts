@@ -47,7 +47,7 @@ export class AgentLedgerService {
       where: { agentId },
     });
 
-    return entries.reduce((balance, entry) => {
+    return entries.reduce((balance: number, entry: { type: string; amount: { toString: () => string } }) => {
       return entry.type === "CREDIT" ? balance + Number(entry.amount) : balance - Number(entry.amount);
     }, 0);
   }
@@ -57,7 +57,7 @@ export class AgentLedgerService {
       where: { agentId, category },
     });
 
-    return entries.reduce((balance, entry) => {
+    return entries.reduce((balance: number, entry: { type: string; amount: { toString: () => string } }) => {
       return entry.type === "CREDIT" ? balance + Number(entry.amount) : balance - Number(entry.amount);
     }, 0);
   }

@@ -18,6 +18,7 @@ export interface ExtendedPrismaClient extends PrismaClient {
   agentWallet: any;
   agentTransaction: any;
   agentKpi: any;
+  agentLedgerEntry: any;
 }
 
 const xprisma = (prismaRaw as any).$extends({

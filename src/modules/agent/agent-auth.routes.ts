@@ -49,7 +49,7 @@ router.get("/me", authenticate, async (req: AuthRequest, res: Response) => {
   });
   if (!agent) throw new AppError(404, "Agent not found");
 
-  const ledgerBalance = agent.ledgerEntries.reduce((sum, e) => {
+  const ledgerBalance = agent.ledgerEntries.reduce((sum: number, e: { type: string; amount: { toString: () => string } }) => {
     return e.type === "CREDIT" ? sum + Number(e.amount) : sum - Number(e.amount);
   }, 0);
 

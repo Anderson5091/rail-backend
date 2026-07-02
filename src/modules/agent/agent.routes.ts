@@ -190,7 +190,7 @@ router.get("/list", authenticate, requireRole("SUPER_ADMIN", "OPS", "TREASURY"),
 
   res.json(
     agents.map((a: { id: string; email: string; fullName: string | null; type: string; status: string; kpiRating: number | null; totalRewards: { toString: () => string }; _count: { transactions: number }; wallets: { walletType: string; balance: { toString: () => string } }[]; ledgerEntries: { type: string; amount: { toString: () => string } }[]; createdAt: Date }) => {
-      const ledgerBalance = a.ledgerEntries.reduce((sum, e) => {
+      const ledgerBalance = a.ledgerEntries.reduce((sum: number, e: { type: string; amount: { toString: () => string } }) => {
         return e.type === "CREDIT" ? sum + Number(e.amount) : sum - Number(e.amount);
       }, 0);
 
