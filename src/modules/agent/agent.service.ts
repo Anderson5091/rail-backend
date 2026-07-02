@@ -581,6 +581,75 @@ export class AgentService {
     });
     return user;
   }
+
+  async swapFunds(agentId: string, amount: number, direction: "TO_LEDGER" | "TO_WALLET"): Promise<{ swappedAmount: number; walletBalance: number; ledgerBalance: number }> {
+    if (amount <= 0) throw new Error("Amount must be greater than 0");
+
+    if (direction === "TO_LEDGER") {
+      const wallet = await prisma.agentWallet.findFirst({
+        where: { agentId, walletType: "MAIN" },
+      });
+      if (!wallet) throw new Error("Agent MAIN wallet not found");
+
+      const available = Number(wallet.balance);
+      if (available < amount) throw new Error("Insufficient wallet balance");
+
+      await prisma.agentWallet.update({
+        where: { id: wallet.id },
+        data: { balance: { decrement: amount } },
+      });
+
+      await agentLedgerService.credit(agentId, amount, "SWAP", `manual_swap_${agentId}_${Date.now()}`, "Manual swap from wallet to ledger");
+
+      await prisma.agentTransaction.create({
+        data: {
+          agentId,
+          type: "SWAP",
+          amount,
+          commission: 0,
+          netAmount: amount,
+          status: "COMPLETED",
+          reference: generateReferenceNumber(),
+          metadata: { direction: "TO_LEDGER", walletId: wallet.id },
+        },
+      });
+    } else {
+      const ledgerBalance = await agentLedgerService.getBalance(agentId);
+      if (ledgerBalance < amount) throw new Error("Insufficient ledger balance");
+
+      const wallet = await prisma.agentWallet.findFirst({
+        where: { agentId, walletType: "MAIN" },
+      });
+      if (!wallet) throw new Error("Agent MAIN wallet not found");
+
+      await agentLedgerService.debit(agentId, amount, "SWAP", `manual_swap_${agentId}_${Date.now()}`, "Manual swap from ledger to wallet");
+
+      await prisma.agentWallet.update({
+        where: { id: wallet.id },
+        data: { balance: { increment: amount } },
+      });
+
+      await prisma.agentTransaction.create({
+        data: {
+          agentId,
+          type: "SWAP",
+          amount,
+          commission: 0,
+          netAmount: amount,
+          status: "COMPLETED",
+          reference: generateReferenceNumber(),
+          metadata: { direction: "TO_WALLET", walletId: wallet.id },
+        },
+      });
+    }
+
+    const ledgerBalance = await agentLedgerService.getBalance(agentId);
+    const wallet = await prisma.agentWallet.findFirst({
+      where: { agentId, walletType: "MAIN" },
+    });
+
+    return { swappedAmount: amount, walletBalance: wallet ? Number(wallet.balance) : 0, ledgerBalance };
+  }
 }
 
 export const agentService = new AgentService();

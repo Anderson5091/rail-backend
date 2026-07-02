@@ -632,6 +632,24 @@ router.post("/:id/cancel-payout", authenticate, requireRole("AGENT_PARTNER", "AG
   }
 });
 
+router.post("/:id/swap", authenticate, requireRole("AGENT_PARTNER"), async (req: AuthRequest, res: Response) => {
+  try {
+    const { amount, direction } = req.body;
+    if (!amount || amount <= 0) {
+      return res.status(400).json({ error: "amount is required and must be greater than 0" });
+    }
+    if (!direction || !["TO_LEDGER", "TO_WALLET"].includes(direction)) {
+      return res.status(400).json({ error: "direction must be TO_LEDGER or TO_WALLET" });
+    }
+
+    const result = await agentService.swapFunds(String(req.params.id), Number(amount), direction);
+    res.json(result);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "Swap failed";
+    res.status(400).json({ error: message });
+  }
+});
+
 router.post("/:id/confirm-payout", authenticate, requireRole("AGENT_PARTNER", "AGENT_INTERNAL"), async (req: AuthRequest, res: Response) => {
   try {
     const { transferId, proofImage, proofMimeType } = req.body;
