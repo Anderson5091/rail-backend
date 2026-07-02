@@ -3,6 +3,7 @@ import bcrypt from "bcryptjs";
 import { prisma } from "../../config/database";
 import { authenticate, AuthRequest, requireRole } from "../../middleware/auth";
 import { agentService } from "./agent.service";
+import { agentLedgerService } from "./agent-ledger.service";
 import { generateReferenceNumber } from "../../utils/id-generator";
 import { crossmintService } from "../../services/crossmint.service";
 import { ledgerService } from "../ledger/ledger.service";
@@ -87,7 +88,7 @@ router.post("/create", authenticate, requireRole("SUPER_ADMIN", "OPS"), async (r
     type: agent.type,
     status: agent.status,
     walletBalance: 0,
-    commissionLedgerBalance: 0,
+    ledgerBalance: 0,
     totalTransactions: 0,
     kpiRating: null,
     createdAt: agent.createdAt,
@@ -181,25 +182,32 @@ router.get("/list", authenticate, requireRole("SUPER_ADMIN", "OPS", "TREASURY"),
   const agents = await prisma.agent.findMany({
     include: {
       wallets: true,
+      ledgerEntries: true,
       _count: { select: { transactions: true } },
     },
     orderBy: { createdAt: "desc" },
   });
 
   res.json(
-    agents.map((a: { id: string; email: string; fullName: string | null; type: string; status: string; kpiRating: number | null; totalRewards: { toString: () => string }; commissionLedger: { toString: () => string }; _count: { transactions: number }; wallets: { walletType: string; balance: { toString: () => string } }[]; createdAt: Date }) => ({
-      id: a.id,
-      email: a.email,
-      fullName: a.fullName,
-      type: a.type,
-      status: a.status,
-      kpiRating: a.kpiRating,
-      totalRewards: Number(a.totalRewards),
-      totalTransactions: a._count.transactions,
-      walletBalance: Number(a.wallets.find((w: { walletType: string }) => w.walletType === "MAIN" || w.walletType === "BASE_TREASURY")?.balance ?? 0),
-      commissionLedgerBalance: Number(a.commissionLedger),
-      createdAt: a.createdAt,
-    }))
+    agents.map((a: { id: string; email: string; fullName: string | null; type: string; status: string; kpiRating: number | null; totalRewards: { toString: () => string }; _count: { transactions: number }; wallets: { walletType: string; balance: { toString: () => string } }[]; ledgerEntries: { type: string; amount: { toString: () => string } }[]; createdAt: Date }) => {
+      const ledgerBalance = a.ledgerEntries.reduce((sum, e) => {
+        return e.type === "CREDIT" ? sum + Number(e.amount) : sum - Number(e.amount);
+      }, 0);
+
+      return {
+        id: a.id,
+        email: a.email,
+        fullName: a.fullName,
+        type: a.type,
+        status: a.status,
+        kpiRating: a.kpiRating,
+        totalRewards: Number(a.totalRewards),
+        totalTransactions: a._count.transactions,
+        walletBalance: Number(a.wallets.find((w: { walletType: string }) => w.walletType === "MAIN" || w.walletType === "BASE_TREASURY")?.balance ?? 0),
+        ledgerBalance,
+        createdAt: a.createdAt,
+      };
+    })
   );
 });
 
@@ -362,10 +370,7 @@ router.post("/:id/process-payout", authenticate, requireRole("AGENT_PARTNER", "A
     await ledgerService.debit(wallet.id, Number(amount), `agent_payout_${agentId}_${Date.now()}`);
 
     if (commission > 0) {
-      await prisma.agent.update({
-        where: { id: agentId },
-        data: { commissionLedger: { increment: commission } },
-      });
+      await agentLedgerService.credit(agentId, commission, "COMMISSION", `payout_commission_${agentId}_${Date.now()}`, `Payout commission for user ${userId}`);
     }
 
     let benCountry: string | undefined;
@@ -433,29 +438,7 @@ router.post("/:id/process-payout", authenticate, requireRole("AGENT_PARTNER", "A
   }
 });
 
-router.post("/:id/withdraw-commission", authenticate, requireRole("AGENT_PARTNER", "AGENT_INTERNAL"), async (req: AuthRequest, res: Response) => {
-  try {
-    const result = await agentService.withdrawCommission(String(req.params.id));
-    res.json(result);
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Failed to withdraw commission";
-    res.status(400).json({ error: message });
-  }
-});
 
-router.post("/:id/swap-offchain", authenticate, requireRole("AGENT_PARTNER"), async (req: AuthRequest, res: Response) => {
-  try {
-    const { direction, amount } = req.body;
-    if (!direction || !["TO_MAIN", "TO_OFFCHAIN"].includes(direction)) {
-      return res.status(400).json({ error: "direction must be TO_MAIN or TO_OFFCHAIN" });
-    }
-    const result = await agentService.swapOffchain(String(req.params.id), direction, amount ? Number(amount) : undefined);
-    res.json(result);
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Swap failed";
-    res.status(400).json({ error: message });
-  }
-});
 
 router.get("/kpi/:id/", authenticate, async (req: AuthRequest, res: Response) => {
   const { period } = req.query;

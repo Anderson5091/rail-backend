@@ -1,5 +1,6 @@
 import { prisma } from "../../config/database";
 import { ledgerService } from "../ledger/ledger.service";
+import { agentLedgerService } from "./agent-ledger.service";
 import { TransferOrchestrator } from "../transfer/transfer.orchestrator";
 import { logger } from "../../utils/logger";
 import { generateReferenceNumber } from "../../utils/id-generator";
@@ -70,41 +71,27 @@ export class AgentService {
     if (agent.type === "INTERNAL") {
       const hotWallet = await prisma.treasuryWallet.findFirst({ where: { walletType: "HOT" } });
       if (!hotWallet) throw new Error("System hot treasury not found");
-      if (Number(hotWallet.balance) < usdtAmount) {
+      if (Number(hotWallet.balance) < netUsdt) {
         throw new Error("Insufficient system treasury balance");
       }
       await prisma.treasuryWallet.update({
         where: { id: hotWallet.id },
-        data: { balance: { decrement: usdtAmount } },
+        data: { balance: { decrement: netUsdt } },
       });
       await prisma.treasuryMovement.create({
         data: {
           fromWallet: "HOT",
           toWallet: "AGENT_ADD_BALANCE",
           fromWalletId: hotWallet.id,
-          amount: usdtAmount,
+          amount: netUsdt,
           network: hotWallet.network,
           reason: `Internal agent ${agentId} addBalance user`,
           status: "COMPLETED",
         },
       });
     } else {
-      const wallet = (agent.wallets as AgentWalletRow[]).find((w) => w.walletType === "MAIN" || w.walletType === "BASE_TREASURY");
-      if (!wallet) throw new Error("Agent wallet not found");
-      if (Number(wallet.balance) < usdtAmount) {
-        throw new Error("Insufficient agent wallet balance. Request top-up from internal agent.");
-      }
-      await prisma.agentWallet.update({
-        where: { id: wallet.id },
-        data: { balance: { decrement: usdtAmount } },
-      });
-    }
-
-    if (commission > 0) {
-      await prisma.agent.update({
-        where: { id: agentId },
-        data: { commissionLedger: { increment: commission } },
-      });
+      await agentLedgerService.ensureBalance(agentId, netUsdt);
+      await agentLedgerService.debit(agentId, netUsdt, "ADD_BALANCE", `add_balance_${agentId}_${Date.now()}`, `Credit user ${userId}`);
     }
 
     const userWallet = await prisma.wallet.findFirst({ where: { userId } });
@@ -156,19 +143,7 @@ export class AgentService {
 
     await ledgerService.debit(userWallet.id, amount, `agent_withdraw_${agentId}_${Date.now()}`);
 
-    if (commission > 0) {
-      await prisma.agent.update({
-        where: { id: agentId },
-        data: { commissionLedger: { increment: commission } },
-      });
-    }
-
-    if (agent.type === "PARTNER") {
-      await prisma.agent.update({
-        where: { id: agentId },
-        data: { offchainLedger: { increment: netAmount } },
-      });
-    }
+    await agentLedgerService.credit(agentId, amount, "WITHDRAW", `withdraw_${agentId}_${Date.now()}`, `From user ${userId}`);
 
     const tx = await prisma.agentTransaction.create({
       data: {
@@ -183,10 +158,6 @@ export class AgentService {
         metadata: { fiatEquivalent: netAmount, destinationType: destinationType || "OFFCHAIN" },
       },
     });
-
-    if (agent.type === "PARTNER" && destinationType === "MAIN") {
-      await this.swapOffchain(agentId, "TO_MAIN", netAmount);
-    }
 
     await this.recordKpi(agentId, amount, commission);
 
@@ -224,46 +195,35 @@ export class AgentService {
 
     const commission = (payload.amount * payload.commissionPercent) / 100;
     const netAmount = payload.amount - commission;
+
     const shouldDebitAgent = !payload.debitUserWallet || !payload.userId;
 
-    if (agent.type === "INTERNAL") {
-      const hotWallet = await prisma.treasuryWallet.findFirst({ where: { walletType: "HOT" } });
-      if (!hotWallet) throw new Error("System hot treasury not found");
-      if (Number(hotWallet.balance) < payload.amount) {
-        throw new Error("Insufficient system treasury balance");
+    if (shouldDebitAgent) {
+      if (agent.type === "INTERNAL") {
+        const hotWallet = await prisma.treasuryWallet.findFirst({ where: { walletType: "HOT" } });
+        if (!hotWallet) throw new Error("System hot treasury not found");
+        if (Number(hotWallet.balance) < netAmount) {
+          throw new Error("Insufficient system treasury balance");
+        }
+        await prisma.treasuryWallet.update({
+          where: { id: hotWallet.id },
+          data: { balance: { decrement: netAmount } },
+        });
+        await prisma.treasuryMovement.create({
+          data: {
+            fromWallet: "HOT",
+            toWallet: "AGENT_TRANSFER",
+            fromWalletId: hotWallet.id,
+            amount: netAmount,
+            network: hotWallet.network,
+            reason: `Internal agent ${agentId} transfer to beneficiary`,
+            status: "COMPLETED",
+          },
+        });
+      } else {
+        await agentLedgerService.ensureBalance(agentId, netAmount);
+        await agentLedgerService.debit(agentId, netAmount, "TRANSFER", `transfer_${agentId}_${Date.now()}`, `Payout method: ${payload.payoutMethod}`);
       }
-      await prisma.treasuryWallet.update({
-        where: { id: hotWallet.id },
-        data: { balance: { decrement: payload.amount } },
-      });
-      await prisma.treasuryMovement.create({
-        data: {
-          fromWallet: "HOT",
-          toWallet: "AGENT_TRANSFER",
-          fromWalletId: hotWallet.id,
-          amount: payload.amount,
-          network: hotWallet.network,
-          reason: `Internal agent ${agentId} transfer to beneficiary`,
-          status: "COMPLETED",
-        },
-      });
-    } else {
-      const wallet = (agent.wallets as AgentWalletRow[]).find((w) => w.walletType === "MAIN" || w.walletType === "BASE_TREASURY");
-      if (!wallet) throw new Error("Agent wallet not found");
-      if (Number(wallet.balance) < payload.amount) {
-        throw new Error("Insufficient agent wallet balance. Request top-up from internal agent.");
-      }
-      await prisma.agentWallet.update({
-        where: { id: wallet.id },
-        data: { balance: { decrement: payload.amount } },
-      });
-    }
-
-    if (commission > 0) {
-      await prisma.agent.update({
-        where: { id: agentId },
-        data: { commissionLedger: { increment: commission } },
-      });
     }
 
     const transfer = await transferOrchestrator.createTransfer({
@@ -299,7 +259,7 @@ export class AgentService {
 
     await this.recordKpi(agentId, payload.amount, commission);
 
-    logger.info(`[Agent] Agent ${agentId} transferred ${netAmount} USDT to beneficiary ${transfer.beneficiaryId}`);
+    logger.info(`[Agent] Agent ${agentId} transferred ${netAmount} USDT to beneficiary ${transfer.beneficiaryId} (debitUserWallet: ${!shouldDebitAgent})`);
     return { agentTx, transfer };
   }
 
@@ -332,9 +292,6 @@ export class AgentService {
       throw new Error("Target agent must be a partner");
     }
 
-    const partnerWallet = (partner.wallets as AgentWalletRow[]).find((w) => w.walletType === "MAIN" || w.walletType === "BASE_TREASURY");
-    if (!partnerWallet) throw new Error("Partner wallet not found");
-
     await prisma.treasuryWallet.update({
       where: { id: hotWallet.id },
       data: { balance: { decrement: usdtAmount } },
@@ -352,10 +309,15 @@ export class AgentService {
       },
     });
 
-    await prisma.agentWallet.update({
-      where: { id: partnerWallet.id },
-      data: { balance: { increment: usdtAmount } },
-    });
+    await agentLedgerService.credit(partnerAgentId, usdtAmount, "TOPUP", `topup_${internalAgentId}_${partnerAgentId}_${Date.now()}`, `Top-up from internal agent ${internalAgentId}`);
+
+    const partnerWallet = (partner.wallets as AgentWalletRow[]).find((w) => w.walletType === "MAIN" || w.walletType === "BASE_TREASURY");
+    if (partnerWallet) {
+      await prisma.agentWallet.update({
+        where: { id: partnerWallet.id },
+        data: { balance: { increment: usdtAmount } },
+      });
+    }
 
     const tx = await prisma.agentTransaction.create({
       data: {
@@ -373,123 +335,6 @@ export class AgentService {
 
     logger.info(`[Agent] Internal agent ${internalAgentId} topped up partner ${partnerAgentId} with ${usdtAmount} USDT`);
     return tx;
-  }
-
-  async withdrawCommission(agentId: string) {
-    const agent = await prisma.agent.findUnique({
-      where: { id: agentId },
-      include: { wallets: true },
-    });
-    if (!agent) throw new Error("Agent not found");
-
-    const ledgerBalance = Number(agent.commissionLedger);
-    if (ledgerBalance < 10) {
-      throw new Error("Commission balance must be at least $10 to withdraw");
-    }
-
-    const wallet = (agent.wallets as AgentWalletRow[]).find((w) => w.walletType === "MAIN" || w.walletType === "BASE_TREASURY");
-    if (!wallet) throw new Error("Agent wallet not found");
-
-    await prisma.agent.update({
-      where: { id: agentId },
-      data: { commissionLedger: { decrement: ledgerBalance } },
-    });
-
-    await prisma.agentWallet.update({
-      where: { id: wallet.id },
-      data: { balance: { increment: ledgerBalance } },
-    });
-
-    const tx = await prisma.agentTransaction.create({
-      data: {
-        agentId,
-        type: "COMMISSION_WITHDRAW",
-        amount: ledgerBalance,
-        commission: 0,
-        netAmount: ledgerBalance,
-        status: "COMPLETED",
-        reference: generateReferenceNumber(),
-        metadata: { fromLedger: true, toWallet: wallet.id },
-      },
-    });
-
-    logger.info(`[Agent] Agent ${agentId} withdrew ${ledgerBalance} USDT from commission to base wallet`);
-    return tx;
-  }
-
-  async swapOffchain(agentId: string, direction: "TO_MAIN" | "TO_OFFCHAIN", amount?: number) {
-    const agent = await prisma.agent.findUnique({
-      where: { id: agentId },
-      include: { wallets: true },
-    });
-    if (!agent) throw new Error("Agent not found");
-    if (agent.type !== "PARTNER") throw new Error("Only partner agents can swap offchain funds");
-
-    const wallet = (agent.wallets as AgentWalletRow[]).find((w) => w.walletType === "MAIN" || w.walletType === "BASE_TREASURY");
-    if (!wallet) throw new Error("Agent wallet not found");
-
-    const offchainBalance = Number(agent.offchainLedger);
-    const mainBalance = Number(wallet.balance);
-
-    if (direction === "TO_MAIN") {
-      const swapAmount = amount ?? offchainBalance;
-      if (swapAmount <= 0) throw new Error("Invalid swap amount");
-      if (offchainBalance < swapAmount) throw new Error("Insufficient offchain balance");
-
-      await prisma.agent.update({
-        where: { id: agentId },
-        data: { offchainLedger: { decrement: swapAmount } },
-      });
-      await prisma.agentWallet.update({
-        where: { id: wallet.id },
-        data: { balance: { increment: swapAmount } },
-      });
-
-      const tx = await prisma.agentTransaction.create({
-        data: {
-          agentId,
-          type: "OFFCHAIN_SWAP",
-          amount: swapAmount,
-          commission: 0,
-          netAmount: swapAmount,
-          status: "COMPLETED",
-          reference: generateReferenceNumber(),
-          metadata: { direction: "TO_MAIN", fromLedger: true, toWallet: wallet.id },
-        },
-      });
-
-      logger.info(`[Agent] Agent ${agentId} swapped ${swapAmount} USDT from offchain to main wallet`);
-      return tx;
-    } else {
-      const swapAmount = amount ?? mainBalance;
-      if (swapAmount <= 0) throw new Error("Invalid swap amount");
-      if (mainBalance < swapAmount) throw new Error("Insufficient main wallet balance");
-
-      await prisma.agentWallet.update({
-        where: { id: wallet.id },
-        data: { balance: { decrement: swapAmount } },
-      });
-      await prisma.agent.update({
-        where: { id: agentId },
-        data: { offchainLedger: { increment: swapAmount } },
-      });
-
-      const tx = await prisma.agentTransaction.create({
-        data: {
-          agentId,
-          type: "OFFCHAIN_SWAP",
-          amount: swapAmount,
-          commission: 0,
-          netAmount: swapAmount,
-          status: "COMPLETED",
-          reference: generateReferenceNumber(),
-          metadata: { direction: "TO_OFFCHAIN", fromWallet: wallet.id, toLedger: true },
-        },
-      });
-
-      logger.info(`[Agent] Agent ${agentId} swapped ${swapAmount} USDT from main to offchain wallet`);
-      return tx;
-    }
   }
 
   async getAgentKpi(agentId: string, period?: string) {
@@ -528,7 +373,7 @@ export class AgentService {
     const agentWallets = agent.wallets as AgentWalletRow[];
     const agentTransactions = agent.transactions as AgentTransactionRow[];
 
-    const wallet = agentWallets.find((w) => w.walletType === "MAIN" || w.walletType === "BASE_TREASURY" || w.walletType === "BASE_TREASURY");
+    const wallet = agentWallets.find((w) => w.walletType === "MAIN" || w.walletType === "BASE_TREASURY");
 
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -546,6 +391,8 @@ export class AgentService {
       take: 20,
     });
 
+    const ledgerBalance = await agentLedgerService.getBalance(agentId);
+
     return {
       id: agent.id,
       email: agent.email,
@@ -554,8 +401,7 @@ export class AgentService {
       status: agent.status,
       kpiRating: agent.kpiRating,
       totalRewards: Number(agent.totalRewards),
-      commissionLedgerBalance: Number(agent.commissionLedger),
-      offchainLedgerBalance: Number(agent.offchainLedger),
+      ledgerBalance,
       walletBalance: wallet ? Number(wallet.balance) : null,
       todayVolume: todayTx.reduce((sum: number, t: AgentTransactionRow) => sum + Number(t.amount), 0),
       todayCommission: todayTx.reduce((sum: number, t: AgentTransactionRow) => sum + Number(t.commission), 0),

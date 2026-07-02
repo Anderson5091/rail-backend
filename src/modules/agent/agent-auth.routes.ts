@@ -5,6 +5,7 @@ import { prisma } from "../../config/database";
 import { generateToken } from "../../utils/token";
 import { AppError } from "../../middleware/errorHandler";
 import { authenticate, AuthRequest } from "../../middleware/auth";
+import { agentLedgerService } from "./agent-ledger.service";
 
 const router = Router();
 
@@ -44,9 +45,13 @@ router.post("/login", async (req, res: Response) => {
 router.get("/me", authenticate, async (req: AuthRequest, res: Response) => {
   const agent = await prisma.agent.findUnique({
     where: { id: req.userId },
-    include: { wallets: true },
+    include: { wallets: true, ledgerEntries: true },
   });
   if (!agent) throw new AppError(404, "Agent not found");
+
+  const ledgerBalance = agent.ledgerEntries.reduce((sum, e) => {
+    return e.type === "CREDIT" ? sum + Number(e.amount) : sum - Number(e.amount);
+  }, 0);
 
   res.json({
     id: agent.id,
@@ -57,7 +62,7 @@ router.get("/me", authenticate, async (req: AuthRequest, res: Response) => {
     status: agent.status,
     kpiRating: agent.kpiRating,
     totalRewards: Number(agent.totalRewards),
-    commissionLedgerBalance: Number(agent.commissionLedger),
+    ledgerBalance,
     wallets: agent.wallets.map((w: { id: string; walletType: string; network: string; address: string; balance: { toString: () => string } }) => ({
       id: w.id,
       walletType: w.walletType,
