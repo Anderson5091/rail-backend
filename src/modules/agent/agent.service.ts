@@ -264,16 +264,21 @@ export class AgentService {
   }
 
   async topUpPartnerBalance(
-    internalAgentId: string,
+    callerId: string,
     partnerAgentId: string,
-    usdtAmount: number
+    usdtAmount: number,
+    callerRole?: string
   ) {
-    const internalAgent = await prisma.agent.findUnique({
-      where: { id: internalAgentId },
-      include: { wallets: true },
-    });
-    if (!internalAgent || internalAgent.type !== "INTERNAL") {
-      throw new Error("Only internal agents can top up partner balances");
+    const isAdmin = callerRole === "SUPER_ADMIN" || callerRole === "OPS";
+
+    if (!isAdmin) {
+      const internalAgent = await prisma.agent.findUnique({
+        where: { id: callerId },
+        include: { wallets: true },
+      });
+      if (!internalAgent || internalAgent.type !== "INTERNAL") {
+        throw new Error("Only internal agents can top up partner balances");
+      }
     }
 
     const hotWallet = await prisma.treasuryWallet.findFirst({
@@ -304,12 +309,12 @@ export class AgentService {
         fromWalletId: hotWallet.id,
         amount: usdtAmount,
         network: hotWallet.network,
-        reason: `Internal agent ${internalAgentId} topped up partner ${partnerAgentId}`,
+        reason: `${isAdmin ? callerRole : "Internal agent"} ${callerId} topped up partner ${partnerAgentId}`,
         status: "COMPLETED",
       },
     });
 
-    await agentLedgerService.credit(partnerAgentId, usdtAmount, "TOPUP", `topup_${internalAgentId}_${partnerAgentId}_${Date.now()}`, `Top-up from internal agent ${internalAgentId}`);
+    await agentLedgerService.credit(partnerAgentId, usdtAmount, "TOPUP", `topup_${callerId}_${partnerAgentId}_${Date.now()}`, `Top-up from ${isAdmin ? callerRole : "internal agent"} ${callerId}`);
 
     const partnerWallet = (partner.wallets as AgentWalletRow[]).find((w) => w.walletType === "MAIN" || w.walletType === "BASE_TREASURY");
     if (partnerWallet) {
@@ -319,22 +324,27 @@ export class AgentService {
       });
     }
 
-    const tx = await prisma.agentTransaction.create({
-      data: {
-        agentId: internalAgentId,
-        type: "TOPUP",
-        amount: usdtAmount,
-        commission: 0,
-        netAmount: usdtAmount,
-        userRef: partnerAgentId,
-        status: "COMPLETED",
-        reference: generateReferenceNumber(),
-        metadata: { targetAgentId: partnerAgentId },
-      },
-    });
+    if (!isAdmin) {
+      const tx = await prisma.agentTransaction.create({
+        data: {
+          agentId: callerId,
+          type: "TOPUP",
+          amount: usdtAmount,
+          commission: 0,
+          netAmount: usdtAmount,
+          userRef: partnerAgentId,
+          status: "COMPLETED",
+          reference: generateReferenceNumber(),
+          metadata: { targetAgentId: partnerAgentId },
+        },
+      });
 
-    logger.info(`[Agent] Internal agent ${internalAgentId} topped up partner ${partnerAgentId} with ${usdtAmount} USDT`);
-    return tx;
+      logger.info(`[Agent] Internal agent ${callerId} topped up partner ${partnerAgentId} with ${usdtAmount} USDT`);
+      return tx;
+    }
+
+    logger.info(`[Agent] ${callerRole} ${callerId} topped up partner ${partnerAgentId} with ${usdtAmount} USDT`);
+    return { success: true, amount: usdtAmount, partnerAgentId };
   }
 
   async getAgentKpi(agentId: string, period?: string) {

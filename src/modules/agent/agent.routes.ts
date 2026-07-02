@@ -292,7 +292,7 @@ router.post("/:id/withdraw", authenticate, requireRole("AGENT_PARTNER", "AGENT_I
   }
 });
 
-router.post("/topup-partner", authenticate, requireRole("AGENT_INTERNAL"), async (req: AuthRequest, res: Response) => {
+router.post("/topup-partner", authenticate, requireRole("SUPER_ADMIN", "OPS", "AGENT_INTERNAL"), async (req: AuthRequest, res: Response) => {
   try {
     const { partnerAgentId, usdtAmount } = req.body;
     if (!partnerAgentId || !usdtAmount) {
@@ -302,7 +302,8 @@ router.post("/topup-partner", authenticate, requireRole("AGENT_INTERNAL"), async
     const result = await agentService.topUpPartnerBalance(
       req.userId!,
       partnerAgentId,
-      usdtAmount
+      usdtAmount,
+      req.userRole
     );
     res.json(result);
   } catch (err: unknown) {
