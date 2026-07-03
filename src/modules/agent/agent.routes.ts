@@ -660,8 +660,13 @@ router.post("/:id/confirm-payout", authenticate, requireRole("AGENT_PARTNER", "A
       },
     });
 
-    await prisma.payoutOrder.update({
+    const payoutOrder = await prisma.payoutOrder.update({
       where: { transferId },
+      data: { status: "COMPLETED" },
+    });
+
+    await prisma.walletTransaction.updateMany({
+      where: { payoutOrderId: payoutOrder.id },
       data: { status: "COMPLETED" },
     });
 
