@@ -316,14 +316,6 @@ export class AgentService {
 
     await agentLedgerService.credit(partnerAgentId, usdtAmount, "TOPUP", `topup_${callerId}_${partnerAgentId}_${Date.now()}`, `Top-up from ${isAdmin ? callerRole : "internal agent"} ${callerId}`);
 
-    const partnerWallet = (partner.wallets as AgentWalletRow[]).find((w) => w.walletType === "MAIN" || w.walletType === "BASE_TREASURY");
-    if (partnerWallet) {
-      await prisma.agentWallet.update({
-        where: { id: partnerWallet.id },
-        data: { balance: { increment: usdtAmount } },
-      });
-    }
-
     if (!isAdmin) {
       const tx = await prisma.agentTransaction.create({
         data: {
