@@ -93,7 +93,7 @@ router.get("/pending-transfers", authenticate, requireRole("AGENT_PARTNER", "AGE
     const currentAgentId = req.userId;
     const transfers = await prisma.transfer.findMany({
       where: {
-        status: { in: ["PENDING_PAYOUT", "PROCESSING"] },
+        status: { in: ["PENDING_PAYOUT", "SENT_TO_PARTNER"] },
         OR: [
           { processingAgentId: null },
           { processingAgentId: currentAgentId }
@@ -555,10 +555,10 @@ router.post("/:id/claim-transfer", authenticate, requireRole("AGENT_PARTNER", "A
 
     await prisma.transfer.update({
       where: { id: transferId },
-      data: { status: "PROCESSING", processingAgentId: agentId },
+      data: { status: "SENT_TO_PARTNER", processingAgentId: agentId },
     });
 
-    res.json({ success: true, message: "Transfer claimed successfully", transferId, status: "PROCESSING" });
+    res.json({ success: true, message: "Transfer claimed successfully", transferId, status: "SENT_TO_PARTNER" });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Failed to claim transfer";
     res.status(400).json({ error: message });
@@ -580,7 +580,7 @@ router.post("/:id/execute-payout", authenticate, requireRole("AGENT_PARTNER", "A
 
     await prisma.transfer.update({
       where: { id: transferId },
-      data: { status: "PROCESSING", processingAgentId: agentId },
+      data: { status: "SENT_TO_PARTNER", processingAgentId: agentId },
     });
 
     res.json({ success: true, message: "Payout processing — deliver funds manually and upload proof", transferId });
@@ -597,7 +597,7 @@ router.post("/:id/cancel-payout", authenticate, requireRole("AGENT_PARTNER", "AG
 
     const transfer = await prisma.transfer.findUnique({ where: { id: transferId } });
     if (!transfer) return res.status(404).json({ error: "Transfer not found" });
-    if (transfer.status !== "PROCESSING") return res.status(400).json({ error: "Transfer is not in PROCESSING status" });
+    if (transfer.status !== "SENT_TO_PARTNER") return res.status(400).json({ error: "Transfer is not in SENT_TO_PARTNER status" });
 
     const agentId = String(req.params.id);
     if (transfer.processingAgentId && transfer.processingAgentId !== agentId) {
@@ -643,7 +643,7 @@ router.post("/:id/confirm-payout", authenticate, requireRole("AGENT_PARTNER", "A
 
     const transfer = await prisma.transfer.findUnique({ where: { id: transferId } });
     if (!transfer) return res.status(404).json({ error: "Transfer not found" });
-    if (transfer.status !== "PROCESSING") return res.status(400).json({ error: "Transfer is not in PROCESSING status" });
+    if (transfer.status !== "SENT_TO_PARTNER") return res.status(400).json({ error: "Transfer is not in SENT_TO_PARTNER status" });
 
     const agentId = String(req.params.id);
     if (transfer.processingAgentId && transfer.processingAgentId !== agentId) {

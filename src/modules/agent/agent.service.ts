@@ -383,7 +383,7 @@ export class AgentService {
 
     const pendingTransfers = await prisma.transfer.findMany({
       where: {
-        status: { in: ["PENDING_PAYOUT", "PROCESSING"] },
+        status: { in: ["PENDING_PAYOUT", "SENT_TO_PARTNER"] },
         OR: [
           { processingAgentId: null },
           { processingAgentId: agentId }
