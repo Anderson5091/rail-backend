@@ -409,26 +409,43 @@ router.get("/transfers", authenticate, requireRole("SUPER_ADMIN", "ADMIN", "OPS"
     include: {
       user: { select: { email: true, fullName: true } },
       payoutOrder: { select: { status: true, externalReference: true, partner: true } },
+      beneficiary: { select: { country: true } },
     },
     orderBy: { createdAt: "desc" },
     take: 200,
   });
 
-  res.json(transfers.map((t: any) => ({
-    id: t.id,
-    userId: t.userId,
-    userEmail: t.user?.email || "",
-    userName: t.user?.fullName || t.user?.email || "System",
-    amount: Number(t.amount),
-    fee: Number(t.fee || 0),
-    destinationAmount: Number(t.destinationAmount || 0),
-    payoutMethod: t.payoutMethod,
-    status: t.status,
-    referenceId: t.referenceId,
-    partner: t.payoutOrder?.partner || null,
-    partnerStatus: t.payoutOrder?.status || null,
-    createdAt: t.createdAt,
-  })));
+  const feeRules = await prisma.feeRule.findMany();
+  const feeRuleMap = new Map<string, { fixed: number; percent: number }>();
+  for (const r of feeRules) {
+    feeRuleMap.set(`${r.country}:${r.payoutMethod}`, { fixed: Number(r.fixedFee), percent: Number(r.percentFee) });
+  }
+
+  res.json(transfers.map((t: any) => {
+    const country = t.beneficiary?.country || "";
+    const rule = feeRuleMap.get(`${country}:${t.payoutMethod}`);
+    const computedFee = rule
+      ? rule.fixed + (Number(t.amount) * rule.percent / 100)
+      : 2 + (Number(t.amount) * 0.01);
+
+    const fee = t.fee != null ? Number(t.fee) : computedFee;
+
+    return {
+      id: t.id,
+      userId: t.userId,
+      userEmail: t.user?.email || "",
+      userName: t.user?.fullName || t.user?.email || "System",
+      amount: Number(t.amount),
+      fee,
+      destinationAmount: Number(t.amount) - fee,
+      payoutMethod: t.payoutMethod,
+      status: t.status,
+      referenceId: t.referenceId,
+      partner: t.payoutOrder?.partner || null,
+      partnerStatus: t.payoutOrder?.status || null,
+      createdAt: t.createdAt,
+    };
+  }));
 });
 
 router.get("/audit-logs", authenticate, requireRole("SUPER_ADMIN", "ADMIN", "COMPLIANCE", "OPS"), async (_req: AuthRequest, res: Response) => {
