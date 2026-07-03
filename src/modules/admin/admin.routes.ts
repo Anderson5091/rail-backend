@@ -417,8 +417,8 @@ router.get("/transfers", authenticate, requireRole("SUPER_ADMIN", "ADMIN", "OPS"
   res.json(transfers.map((t: any) => ({
     id: t.id,
     userId: t.userId,
-    userEmail: t.user.email,
-    userName: t.user.fullName || t.user.email,
+    userEmail: t.user?.email || "",
+    userName: t.user?.fullName || t.user?.email || "System",
     amount: Number(t.amount),
     fee: Number(t.fee || 0),
     destinationAmount: Number(t.destinationAmount || 0),
