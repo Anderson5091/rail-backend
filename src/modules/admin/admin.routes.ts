@@ -409,11 +409,16 @@ router.get("/transfers", authenticate, requireRole("SUPER_ADMIN", "ADMIN", "OPS"
     include: {
       user: { select: { email: true, fullName: true } },
       payoutOrder: { select: { status: true, externalReference: true, partner: true } },
-      beneficiary: { select: { country: true } },
     },
     orderBy: { createdAt: "desc" },
     take: 200,
   });
+
+  const beneficiaryIds = (transfers as any[]).filter((t: any) => t.beneficiaryId).map((t: any) => t.beneficiaryId as string);
+  const beneficiaries = beneficiaryIds.length > 0
+    ? await prisma.beneficiary.findMany({ where: { id: { in: beneficiaryIds } } })
+    : [];
+  const beneficiaryMap = new Map<string, { country: string }>((beneficiaries as any[]).map((b: any) => [b.id, { country: b.country }]));
 
   const feeRules = await prisma.feeRule.findMany();
   const feeRuleMap = new Map<string, { fixed: number; percent: number }>();
@@ -422,7 +427,8 @@ router.get("/transfers", authenticate, requireRole("SUPER_ADMIN", "ADMIN", "OPS"
   }
 
   res.json(transfers.map((t: any) => {
-    const country = t.beneficiary?.country || "";
+    const beneficiary = t.beneficiaryId ? beneficiaryMap.get(t.beneficiaryId) : null;
+    const country = beneficiary?.country || "";
     const rule = feeRuleMap.get(`${country}:${t.payoutMethod}`);
     const computedFee = rule
       ? rule.fixed + (Number(t.amount) * rule.percent / 100)
