@@ -86,6 +86,7 @@ model LedgerEntry {
   type      String
   amount    Decimal  @db.Decimal(24, 8)
   reference String?
+  comment   String?
   uniqueKey String?  @unique
   createdAt DateTime @default(now())
   wallet    Wallet   @relation(fields: [walletId], references: [id])

@@ -1,25 +1,27 @@
 import { prisma } from "../../config/database";
 
 export class LedgerService {
-  async credit(walletId: string, amount: number, reference?: string) {
+  async credit(walletId: string, amount: number, reference?: string, comment?: string) {
     return prisma.ledgerEntry.create({
       data: {
         walletId,
         type: "CREDIT",
         amount,
         reference,
+        comment,
         uniqueKey: reference ? `credit_${reference}` : undefined,
       },
     });
   }
 
-  async debit(walletId: string, amount: number, reference?: string) {
+  async debit(walletId: string, amount: number, reference?: string, comment?: string) {
     return prisma.ledgerEntry.create({
       data: {
         walletId,
         type: "DEBIT",
         amount,
         reference,
+        comment,
         uniqueKey: reference ? `debit_${reference}` : undefined,
       },
     });
