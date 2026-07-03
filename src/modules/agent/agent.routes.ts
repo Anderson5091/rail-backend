@@ -445,66 +445,19 @@ router.get("/:id/transactions", authenticate, async (req: AuthRequest, res: Resp
     take: 100,
   });
 
-  // Enrich transactions with payout status
-  const enrichedTransactions = await Promise.all(
-    transactions.map(async (t: any) => {
-      let payoutStatus = null;
-
-      if (t.type === "TRANSFER" && t.reference) {
-        // For TRANSFER transactions, find the transfer and get its payout orders
-        const transfer = await prisma.transfer.findUnique({
-          where: { referenceId: t.reference },
-          include: { payoutOrders: true },
-        });
-
-        if (transfer && (transfer.payoutOrders as any[]).length > 0) {
-          // Determine payout status based on payout orders
-          const payoutOrders = transfer.payoutOrders as any[];
-          const hasCompleted = payoutOrders.some(
-            (po: any) => ["EXECUTED", "CONFIRMED", "COMPLETED"].includes(po.status)
-          );
-          const hasProcessing = payoutOrders.some(
-            (po: any) => ["PROCESSING", "PENDING"].includes(po.status)
-          );
-          const hasFailed = payoutOrders.some((po: any) => po.status === "FAILED");
-
-          if (hasCompleted) {
-            payoutStatus = "COMPLETED";
-          } else if (hasProcessing) {
-            payoutStatus = "PROCESSING";
-          } else if (hasFailed) {
-            payoutStatus = "FAILED";
-          } else {
-            payoutStatus = "PENDING";
-          }
-        }
-      } else if (t.type === "PAYOUT" && t.reference) {
-        // For PAYOUT transactions, find the payout order directly
-        const payoutOrder = await prisma.payoutOrder.findUnique({
-          where: { referenceId: t.reference },
-        });
-
-        if (payoutOrder) {
-          payoutStatus = (payoutOrder as any).status;
-        }
-      }
-
-      return {
-        id: t.id,
-        type: t.type,
-        amount: Number(t.amount),
-        commission: Number(t.commission),
-        netAmount: Number(t.netAmount),
-        userRef: t.userRef,
-        status: t.status,
-        reference: t.reference,
-        createdAt: t.createdAt,
-        payoutStatus, // Add payout status to response
-      };
-    })
+  res.json(
+    transactions.map((t: { id: string; type: string; amount: { toString: () => string }; commission: { toString: () => string }; netAmount: { toString: () => string }; userRef: string | null; status: string; reference: string | null; createdAt: Date }) => ({
+      id: t.id,
+      type: t.type,
+      amount: Number(t.amount),
+      commission: Number(t.commission),
+      netAmount: Number(t.netAmount),
+      userRef: t.userRef,
+      status: t.status,
+      reference: t.reference,
+      createdAt: t.createdAt,
+    }))
   );
-
-  res.json(enrichedTransactions);
 });
 
 router.get("/:id/recent-deposits", authenticate, requireRole("AGENT_PARTNER", "AGENT_INTERNAL"), async (req: AuthRequest, res: Response) => {
