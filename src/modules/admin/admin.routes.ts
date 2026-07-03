@@ -172,8 +172,40 @@ router.get("/payouts/failed", authenticate, requireRole("SUPER_ADMIN", "ADMIN", 
     where: { status: "FAILED" },
     orderBy: { createdAt: "desc" },
     take: 50,
+    include: { transfer: { select: { referenceId: true, amount: true } } },
   });
-  res.json(payouts);
+  res.json(payouts.map((p: any) => ({
+    id: p.id,
+    transferId: p.transferId,
+    amount: Number(p.transfer?.amount || 0),
+    currency: p.currency,
+    partner: p.partner,
+    status: p.status,
+    externalReference: p.externalReference,
+    attempts: p.attemptCount,
+    referenceId: p.transfer?.referenceId || "",
+    createdAt: p.createdAt,
+  })));
+});
+
+router.get("/payouts/completed", authenticate, requireRole("SUPER_ADMIN", "ADMIN", "OPS"), async (_req: AuthRequest, res: Response) => {
+  const payouts = await prisma.payoutOrder.findMany({
+    where: { status: "COMPLETED" },
+    orderBy: { createdAt: "desc" },
+    take: 50,
+    include: { transfer: { select: { referenceId: true, amount: true } } },
+  });
+  res.json(payouts.map((p: any) => ({
+    id: p.id,
+    transferId: p.transferId,
+    amount: Number(p.transfer?.amount || 0),
+    currency: p.currency,
+    partner: p.partner,
+    status: p.status,
+    externalReference: p.externalReference,
+    referenceId: p.transfer?.referenceId || "",
+    createdAt: p.createdAt,
+  })));
 });
 
 router.post("/payouts/:id/retry", authenticate, requireRole("SUPER_ADMIN", "ADMIN", "OPS"), async (req: AuthRequest, res: Response) => {
