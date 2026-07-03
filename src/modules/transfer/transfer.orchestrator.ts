@@ -4,6 +4,7 @@ import { ledgerService } from "../ledger/ledger.service";
 import { eventEmitter } from "../events/event.emitter";
 import { logger } from "../../utils/logger";
 import { generateTransactionNumber, generateReferenceNumber } from "../../utils/id-generator";
+import { feeService } from "../fees/fee.service";
 
 interface CreateTransferInput {
   beneficiaryId?: string;
@@ -23,6 +24,7 @@ interface CreateTransferInput {
   referenceId?: string;
   userId?: string;
   skipWalletDebit?: boolean;
+  country?: string;
 }
 
 export class TransferOrchestrator {
@@ -49,6 +51,10 @@ export class TransferOrchestrator {
 
     if (!beneficiaryId) throw new Error("Beneficiary ID or inline beneficiary details are required");
 
+    const country = input.country || (input.beneficiary?.country) || "";
+    const { fee } = await feeService.calculate(country, input.payoutMethod, input.amount);
+    const destinationAmount = input.amount - fee;
+
     const currency = input.currency || "USD";
     const referenceId = input.referenceId || generateReferenceNumber();
 
@@ -57,6 +63,8 @@ export class TransferOrchestrator {
       userId: input.userId,
         beneficiaryId,
         amount: input.amount,
+        fee,
+        destinationAmount,
         payoutMethod: input.payoutMethod,
         currency,
         status: "PENDING_PAYOUT",

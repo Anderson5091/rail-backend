@@ -528,6 +528,7 @@ router.get("/transfers", authenticate, requireRole("SUPER_ADMIN", "ADMIN", "OPS"
       : 2 + (Number(t.amount) * 0.01);
 
     const fee = t.fee != null ? Number(t.fee) : computedFee;
+    const destAmt = t.destinationAmount != null ? Number(t.destinationAmount) : (Number(t.amount) - fee);
 
     return {
       id: t.id,
@@ -536,7 +537,7 @@ router.get("/transfers", authenticate, requireRole("SUPER_ADMIN", "ADMIN", "OPS"
       userName: t.user?.fullName || t.user?.email || "System",
       amount: Number(t.amount),
       fee,
-      destinationAmount: Number(t.amount) - fee,
+      destinationAmount: destAmt,
       payoutMethod: t.payoutMethod,
       status: t.status,
       referenceId: t.referenceId,

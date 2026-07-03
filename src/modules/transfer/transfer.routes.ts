@@ -40,6 +40,7 @@ router.post("/", authenticate, idempotencyMiddleware, async (req: AuthRequest, r
     ...data,
     currency,
     userId: req.userId!,
+    country: beneficiary?.country,
   });
   res.status(201).json(transfer);
 });
