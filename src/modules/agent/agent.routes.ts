@@ -616,7 +616,7 @@ router.post("/:id/cancel-payout", authenticate, requireRole("AGENT_PARTNER", "AG
   }
 });
 
-router.post("/:id/swap", authenticate, requireRole("AGENT_PARTNER"), async (req: AuthRequest, res: Response) => {
+router.post("/:id/swap", authenticate, requireRole("AGENT_PARTNER", "AGENT_INTERNAL"), async (req: AuthRequest, res: Response) => {
   try {
     const { amount, direction } = req.body;
     if (!amount || amount <= 0) {
