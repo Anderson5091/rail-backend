@@ -167,7 +167,7 @@ router.post("/compliance-cases/:id/escalate", authenticate, requireRole("SUPER_A
   res.json({ status: "ESCALATED" });
 });
 
-router.get("/payouts/failed", authenticate, requireRole("SUPER_ADMIN", "ADMIN", "OPS"), async (_req: AuthRequest, res: Response) => {
+router.get("/payouts/failed", authenticate, requireRole("SUPER_ADMIN", "ADMIN", "OPS", "TREASURY"), async (_req: AuthRequest, res: Response) => {
   const payouts = await prisma.payoutOrder.findMany({
     where: { status: "FAILED" },
     orderBy: { createdAt: "desc" },
@@ -188,7 +188,7 @@ router.get("/payouts/failed", authenticate, requireRole("SUPER_ADMIN", "ADMIN", 
   })));
 });
 
-router.get("/payouts/completed", authenticate, requireRole("SUPER_ADMIN", "ADMIN", "OPS"), async (_req: AuthRequest, res: Response) => {
+router.get("/payouts/completed", authenticate, requireRole("SUPER_ADMIN", "ADMIN", "OPS", "TREASURY"), async (_req: AuthRequest, res: Response) => {
   const payouts = await prisma.payoutOrder.findMany({
     where: { status: "COMPLETED" },
     orderBy: { createdAt: "desc" },
@@ -208,7 +208,7 @@ router.get("/payouts/completed", authenticate, requireRole("SUPER_ADMIN", "ADMIN
   })));
 });
 
-router.get("/payouts/:id", authenticate, requireRole("SUPER_ADMIN", "ADMIN", "OPS"), async (req: AuthRequest, res: Response) => {
+router.get("/payouts/:id", authenticate, requireRole("SUPER_ADMIN", "ADMIN", "OPS", "TREASURY"), async (req: AuthRequest, res: Response) => {
   const payout = await prisma.payoutOrder.findUnique({
     where: { id: req.params.id },
     include: {
@@ -269,7 +269,7 @@ router.get("/payouts/:id", authenticate, requireRole("SUPER_ADMIN", "ADMIN", "OP
   });
 });
 
-router.post("/payouts/:id/retry", authenticate, requireRole("SUPER_ADMIN", "ADMIN", "OPS"), async (req: AuthRequest, res: Response) => {
+router.post("/payouts/:id/retry", authenticate, requireRole("SUPER_ADMIN", "ADMIN", "OPS", "TREASURY"), async (req: AuthRequest, res: Response) => {
   const payout = await prisma.payoutOrder.findUnique({ where: { id: req.params.id } });
   if (!payout) return res.status(404).json({ error: "Payout not found" });
   if (payout.attemptCount >= 3) return res.status(400).json({ error: "Max retries reached" });
@@ -291,7 +291,7 @@ router.post("/payouts/:id/retry", authenticate, requireRole("SUPER_ADMIN", "ADMI
   res.json({ status: "RETRY_QUEUED" });
 });
 
-router.post("/payouts/:id/revert", authenticate, requireRole("SUPER_ADMIN", "ADMIN", "OPS"), async (req: AuthRequest, res: Response) => {
+router.post("/payouts/:id/revert", authenticate, requireRole("SUPER_ADMIN", "ADMIN", "OPS", "TREASURY"), async (req: AuthRequest, res: Response) => {
   const payout = await prisma.payoutOrder.findUnique({ where: { id: req.params.id } });
   if (!payout) return res.status(404).json({ error: "Payout not found" });
   if (payout.status !== "FAILED") return res.status(400).json({ error: "Only failed payouts can be reverted" });
