@@ -59,9 +59,29 @@ router.get("/", authenticate, async (req: AuthRequest, res: Response) => {
 router.get("/:id", authenticate, async (req: AuthRequest, res: Response) => {
   const transfer = await prisma.transfer.findFirst({
     where: { id: req.params.id, userId: req.userId },
+    include: { payoutOrder: true },
   });
   if (!transfer) return res.status(404).json({ error: "Transfer not found" });
-  res.json(transfer);
+
+  let beneficiary = null;
+  if (transfer.beneficiaryId) {
+    beneficiary = await prisma.beneficiary.findUnique({ where: { id: transfer.beneficiaryId } });
+  }
+
+  res.json({
+    ...transfer,
+    amount: Number(transfer.amount),
+    fee: transfer.fee ? Number(transfer.fee) : null,
+    fxRate: transfer.fxRate ? Number(transfer.fxRate) : null,
+    destinationAmount: transfer.destinationAmount ? Number(transfer.destinationAmount) : null,
+    beneficiary: beneficiary ? {
+      fullName: beneficiary.fullName,
+      country: beneficiary.country,
+      payoutMethod: beneficiary.payoutMethod,
+      bankName: (beneficiary as any).bankName || null,
+      accountNumber: (beneficiary as any).accountNumber || null,
+    } : null,
+  });
 });
 
 export { router as transferRoutes };
