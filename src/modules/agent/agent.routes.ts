@@ -672,40 +672,6 @@ router.post("/:id/confirm-payout", authenticate, requireRole("AGENT_PARTNER", "A
   }
 });
 
-router.get("/:id/executed-payouts", authenticate, requireRole("AGENT_PARTNER", "AGENT_INTERNAL"), async (req: AuthRequest, res: Response) => {
-  try {
-    const payouts = await prisma.payoutOrder.findMany({
-      where: {
-        status: "COMPLETED",
-        transfer: { processingAgentId: String(req.params.id) },
-      },
-      include: {
-        transfer: { select: { referenceId: true, amount: true, fee: true, destinationAmount: true, payoutMethod: true, status: true, createdAt: true, proofImage: true, proofMimeType: true } },
-      },
-      orderBy: { updatedAt: "desc" },
-      take: 50,
-    });
-
-    res.json(payouts.map((p: any) => ({
-      id: p.id,
-      transferId: p.transferId,
-      referenceId: p.transfer?.referenceId || "",
-      amount: Number(p.transfer?.amount || 0),
-      fee: Number(p.transfer?.fee || 0),
-      destinationAmount: Number(p.transfer?.destinationAmount || 0),
-      payoutMethod: p.transfer?.payoutMethod || p.payoutMethod,
-      partner: p.partner,
-      externalReference: p.externalReference,
-      hasProofImage: !!(p.transfer?.proofImage),
-      createdAt: p.transfer?.createdAt || p.createdAt,
-      updatedAt: p.updatedAt,
-    })));
-  } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Failed to fetch executed payouts";
-    res.status(400).json({ error: message });
-  }
-});
-
 router.post("/lookup-user", authenticate, requireRole("AGENT_PARTNER", "AGENT_INTERNAL"), async (req: AuthRequest, res: Response) => {
   try {
     const { identifier } = req.body;
