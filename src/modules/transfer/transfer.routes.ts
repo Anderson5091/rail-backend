@@ -12,7 +12,7 @@ const router = Router();
 const createSchema = z.object({
   beneficiaryId: z.string(),
   amount: z.number().positive(),
-  payoutMethod: z.enum(["BANK", "MOBILE_MONEY", "CASH_PICKUP"]),
+  payoutMethod: z.string().optional(),
   accountCurrency: z.string().optional(),
 });
 
@@ -31,13 +31,15 @@ router.post("/quote", async (req: AuthRequest, res: Response) => {
 router.post("/", authenticate, idempotencyMiddleware, async (req: AuthRequest, res: Response) => {
   const data = createSchema.parse(req.body);
   const beneficiary = await prisma.beneficiary.findUnique({ where: { id: data.beneficiaryId } });
+  const payOutMethod = beneficiary?.payoutMethod || data.payoutMethod || "BANK";
   const currency = await fxService.resolveCurrency(
     beneficiary?.country || "US",
-    data.payoutMethod,
+    payOutMethod,
     data.accountCurrency || beneficiary?.accountCurrency,
   );
   const transfer = await orchestrator.createTransfer({
     ...data,
+    payoutMethod: payOutMethod,
     currency,
     userId: req.userId!,
     country: beneficiary?.country,
