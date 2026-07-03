@@ -212,12 +212,21 @@ router.get("/payouts/:id", authenticate, requireRole("SUPER_ADMIN", "ADMIN", "OP
   const payout = await prisma.payoutOrder.findUnique({
     where: { id: req.params.id },
     include: {
-      transfer: { select: { id: true, referenceId: true, amount: true, fee: true, destinationAmount: true, status: true, payoutMethod: true, createdAt: true, userId: true, user: { select: { email: true, fullName: true } } } },
+      transfer: { select: { id: true, referenceId: true, amount: true, fee: true, destinationAmount: true, status: true, payoutMethod: true, createdAt: true, userId: true, processingAgentId: true, proofImage: true, proofMimeType: true, user: { select: { email: true, fullName: true } } } },
       payoutEvents: { orderBy: { createdAt: "desc" }, take: 20 },
       partnerLogs: { orderBy: { createdAt: "desc" }, take: 5 },
     },
   });
   if (!payout) return res.status(404).json({ error: "Payout not found" });
+
+  let agentInfo = null;
+  if (payout.transfer?.processingAgentId) {
+    const agent = await prisma.agent.findUnique({ where: { id: payout.transfer.processingAgentId }, select: { id: true, email: true, fullName: true, type: true } });
+    if (agent) {
+      agentInfo = { id: agent.id, email: agent.email, name: agent.fullName || agent.email, type: agent.type };
+    }
+  }
+
   res.json({
     id: payout.id,
     transferId: payout.transferId,
@@ -230,6 +239,7 @@ router.get("/payouts/:id", authenticate, requireRole("SUPER_ADMIN", "ADMIN", "OP
     attemptCount: payout.attemptCount,
     createdAt: payout.createdAt,
     updatedAt: payout.updatedAt,
+    processingAgent: agentInfo,
     transfer: payout.transfer ? {
       id: payout.transfer.id,
       referenceId: payout.transfer.referenceId,
@@ -241,6 +251,8 @@ router.get("/payouts/:id", authenticate, requireRole("SUPER_ADMIN", "ADMIN", "OP
       createdAt: payout.transfer.createdAt,
       userEmail: payout.transfer.user?.email || "",
       userName: payout.transfer.user?.fullName || payout.transfer.user?.email || "System",
+      proofImage: payout.transfer.proofImage || null,
+      proofMimeType: payout.transfer.proofMimeType || null,
     } : null,
     events: payout.payoutEvents.map((e: any) => ({
       id: e.id,
