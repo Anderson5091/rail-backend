@@ -208,6 +208,55 @@ router.get("/payouts/completed", authenticate, requireRole("SUPER_ADMIN", "ADMIN
   })));
 });
 
+router.get("/payouts/:id", authenticate, requireRole("SUPER_ADMIN", "ADMIN", "OPS"), async (req: AuthRequest, res: Response) => {
+  const payout = await prisma.payoutOrder.findUnique({
+    where: { id: req.params.id },
+    include: {
+      transfer: { select: { id: true, referenceId: true, amount: true, fee: true, destinationAmount: true, status: true, payoutMethod: true, createdAt: true, userId: true, user: { select: { email: true, fullName: true } } } },
+      payoutEvents: { orderBy: { createdAt: "desc" }, take: 20 },
+      partnerLogs: { orderBy: { createdAt: "desc" }, take: 5 },
+    },
+  });
+  if (!payout) return res.status(404).json({ error: "Payout not found" });
+  res.json({
+    id: payout.id,
+    transferId: payout.transferId,
+    amount: Number(payout.transfer?.amount || 0),
+    currency: payout.currency,
+    status: payout.status,
+    partner: payout.partner,
+    payoutMethod: payout.payoutMethod,
+    externalReference: payout.externalReference,
+    attemptCount: payout.attemptCount,
+    createdAt: payout.createdAt,
+    updatedAt: payout.updatedAt,
+    transfer: payout.transfer ? {
+      id: payout.transfer.id,
+      referenceId: payout.transfer.referenceId,
+      amount: Number(payout.transfer.amount),
+      fee: Number(payout.transfer.fee || 0),
+      destinationAmount: Number(payout.transfer.destinationAmount || 0),
+      status: payout.transfer.status,
+      payoutMethod: payout.transfer.payoutMethod,
+      createdAt: payout.transfer.createdAt,
+      userEmail: payout.transfer.user?.email || "",
+      userName: payout.transfer.user?.fullName || payout.transfer.user?.email || "System",
+    } : null,
+    events: payout.payoutEvents.map((e: any) => ({
+      id: e.id,
+      eventType: e.eventType,
+      payload: e.payload,
+      createdAt: e.createdAt,
+    })),
+    partnerLogs: payout.partnerLogs.map((l: any) => ({
+      id: l.id,
+      partner: l.partner,
+      statusCode: l.statusCode,
+      createdAt: l.createdAt,
+    })),
+  });
+});
+
 router.post("/payouts/:id/retry", authenticate, requireRole("SUPER_ADMIN", "ADMIN", "OPS"), async (req: AuthRequest, res: Response) => {
   const payout = await prisma.payoutOrder.findUnique({ where: { id: req.params.id } });
   if (!payout) return res.status(404).json({ error: "Payout not found" });
