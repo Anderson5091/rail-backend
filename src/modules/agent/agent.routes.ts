@@ -583,6 +583,24 @@ router.post("/:id/execute-payout", authenticate, requireRole("AGENT_PARTNER", "A
       data: { status: "SENT_TO_PARTNER", processingAgentId: agentId },
     });
 
+    const reference = generateReferenceNumber();
+    const amount = Number(transfer.amount);
+    await prisma.agentTransaction.create({
+      data: {
+        agentId,
+        type: "PAYOUT",
+        amount,
+        commission: 0,
+        netAmount: amount,
+        userRef: transfer.userId,
+        status: "COMPLETED",
+        reference,
+        metadata: { payoutMethod: transfer.payoutMethod, beneficiaryId: transfer.beneficiaryId, transferId },
+      },
+    });
+
+    await agentService.recordKpi(agentId, amount, 0);
+
     res.json({ success: true, message: "Payout processing — deliver funds manually and upload proof", transferId });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Failed to execute payout";
