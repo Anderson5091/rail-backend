@@ -170,12 +170,24 @@ router.get("/transactions/:id", authenticate, async (req: AuthRequest, res: Resp
   if (!tx) return res.status(404).json({ error: "Transaction not found" });
 
   let transferId: string | null = null;
+  let recipientEmail: string | undefined;
+  let recipientName: string | undefined;
+
   if (tx.payoutOrderId) {
     const po = await prisma.payoutOrder.findUnique({
       where: { id: tx.payoutOrderId },
       select: { transferId: true },
     });
     transferId = po?.transferId || null;
+  } else if (tx.type === "TRANSFER" && tx.transactionNumber) {
+    const creditEntry = await prisma.ledgerEntry.findFirst({
+      where: { reference: tx.transactionNumber, type: "CREDIT" },
+      include: { wallet: { include: { user: { select: { email: true, fullName: true } } } } },
+    });
+    if (creditEntry?.wallet?.user) {
+      recipientEmail = creditEntry.wallet.user.email;
+      recipientName = creditEntry.wallet.user.fullName || undefined;
+    }
   }
 
   res.json({
@@ -183,6 +195,8 @@ router.get("/transactions/:id", authenticate, async (req: AuthRequest, res: Resp
     amount: Number(tx.amount),
     transferId,
     transferType: tx.type === "TRANSFER" ? (tx.payoutOrderId ? "global" : "internal") : undefined,
+    recipientEmail,
+    recipientName,
   });
 });
 
