@@ -132,9 +132,25 @@ router.get("/transactions", authenticate, async (req: AuthRequest, res: Response
     take: 50,
   });
 
+  type Tx = typeof transactions[0];
+  const payoutOrderIds = transactions
+    .filter((tx: Tx) => tx.type === "TRANSFER" && !!tx.payoutOrderId)
+    .map((tx: Tx) => tx.payoutOrderId!);
+
+  const payoutOrders = payoutOrderIds.length > 0
+    ? await prisma.payoutOrder.findMany({
+        where: { id: { in: payoutOrderIds } },
+        select: { id: true, transferId: true },
+      })
+    : [];
+
+  type Po = typeof payoutOrders[0];
+  const transferIdByPayout = new Map(payoutOrders.map((po: Po) => [po.id, po.transferId]));
+
   res.json(transactions.map((tx: typeof transactions[0]) => ({
     ...tx,
     amount: Number(tx.amount),
+    transferId: tx.payoutOrderId ? (transferIdByPayout.get(tx.payoutOrderId) || null) : null,
   })));
 });
 
