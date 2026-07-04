@@ -8,6 +8,7 @@ import { depositService } from "../deposit/deposit.service";
 import { ledgerService } from "../ledger/ledger.service";
 import { lockService } from "../../services/lock.service";
 import { logger } from "../../utils/logger";
+import { generateTransactionNumber } from "../../utils/id-generator";
 
 const router = Router();
 
@@ -181,28 +182,52 @@ router.post("/internal-transfer", authenticate, async (req: AuthRequest, res: Re
   const recipientWallet = await prisma.wallet.findFirst({ where: { userId: recipient.id } });
   if (!recipientWallet) return res.status(400).json({ error: "Recipient wallet not found" });
 
+  const txRef = generateTransactionNumber();
+
   const result = await lockService.withLock(`wallet:${senderWallet.id}`, async () => {
     const balance = await ledgerService.getBalance(senderWallet.id);
     if (balance < amountNum) throw new Error("Insufficient balance");
 
-    await ledgerService.debit(senderWallet.id, amountNum, `internal_to_${recipient.id}`);
-    await ledgerService.credit(recipientWallet.id, amountNum, `internal_from_${req.userId}`);
+    await (prisma as any).$transaction(async (tx: any) => {
+      await tx.ledgerEntry.create({
+        data: {
+          walletId: senderWallet.id,
+          type: "DEBIT",
+          amount: amountNum,
+          reference: txRef,
+          uniqueKey: `debit_${txRef}`,
+        },
+      });
 
-    await prisma.walletTransaction.createMany({
-      data: [
-        {
+      await tx.ledgerEntry.create({
+        data: {
+          walletId: recipientWallet.id,
+          type: "CREDIT",
+          amount: amountNum,
+          reference: txRef,
+          uniqueKey: `credit_${txRef}`,
+        },
+      });
+
+      await tx.walletTransaction.create({
+        data: {
           walletId: senderWallet.id,
           type: "TRANSFER",
           amount: amountNum,
           status: "COMPLETED",
+          transactionNumber: txRef,
         },
-        {
+      });
+
+      await tx.walletTransaction.create({
+        data: {
           walletId: recipientWallet.id,
           type: "TRANSFER",
           amount: amountNum,
           status: "COMPLETED",
+          transactionNumber: txRef,
         },
-      ],
+      });
     });
 
     return { success: true };
