@@ -152,6 +152,7 @@ router.get("/transactions", authenticate, async (req: AuthRequest, res: Response
     ...tx,
     amount: Number(tx.amount),
     transferId: tx.payoutOrderId ? (transferIdByPayout.get(tx.payoutOrderId) || null) : null,
+    transferType: tx.type === "TRANSFER" ? (tx.payoutOrderId ? "global" : "internal") : undefined,
   })));
 });
 
