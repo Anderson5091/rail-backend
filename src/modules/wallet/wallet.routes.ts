@@ -156,6 +156,36 @@ router.get("/transactions", authenticate, async (req: AuthRequest, res: Response
   })));
 });
 
+router.get("/transactions/:id", authenticate, async (req: AuthRequest, res: Response) => {
+  const wallet = await prisma.wallet.findFirst({
+    where: { userId: req.userId },
+  });
+
+  if (!wallet) return res.status(404).json({ error: "Wallet not found" });
+
+  const tx = await prisma.walletTransaction.findFirst({
+    where: { id: req.params.id, walletId: wallet.id },
+  });
+
+  if (!tx) return res.status(404).json({ error: "Transaction not found" });
+
+  let transferId: string | null = null;
+  if (tx.payoutOrderId) {
+    const po = await prisma.payoutOrder.findUnique({
+      where: { id: tx.payoutOrderId },
+      select: { transferId: true },
+    });
+    transferId = po?.transferId || null;
+  }
+
+  res.json({
+    ...tx,
+    amount: Number(tx.amount),
+    transferId,
+    transferType: tx.type === "TRANSFER" ? (tx.payoutOrderId ? "global" : "internal") : undefined,
+  });
+});
+
 const internalTransferSchema = z.object({
   recipientEmail: z.string().email(),
   amount: z.union([z.string(), z.number()]).refine(
