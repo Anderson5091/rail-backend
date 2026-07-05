@@ -17,6 +17,7 @@ import { treasuryRoutes } from "./modules/treasury/treasury.routes";
 import { kycRoutes } from "./modules/kyc/kyc.routes";
 import { adminRoutes } from "./modules/admin/admin.routes";
 import { adminAuthRoutes } from "./modules/admin/admin-auth.routes";
+import { adminRevenueRoutes } from "./modules/admin/admin-revenue.routes";
 import { webhookRoutes } from "./modules/webhook/webhook.routes";
 import { notificationRoutes } from "./modules/notifications/notification.routes";
 import { partnerRoutes } from "./modules/partners/partners.routes";
@@ -26,6 +27,7 @@ import { withdrawalRoutes } from "./modules/withdrawal/withdrawal.routes";
 import { agentRoutes } from "./modules/agent/agent.routes";
 import { agentAuthRoutes } from "./modules/agent/agent-auth.routes";
 import { feeRoutes } from "./modules/fees/fee.routes";
+import { publicFeeRoutes } from "./modules/fees/public-fee.routes";
 
 const app = express();
 const httpServer = createServer(app);
@@ -65,6 +67,8 @@ app.use("/api/v1/production", productionRoutes);
 app.use("/api/v1/agent", agentRoutes);
 app.use("/api/v1/agent/auth", agentAuthRoutes);
 app.use("/api/v1/admin/fees", feeRoutes);
+app.use("/api/v1/admin/revenue", adminRevenueRoutes);
+app.use("/api/v1/fees", publicFeeRoutes);
 
 app.use(errorHandler);
 

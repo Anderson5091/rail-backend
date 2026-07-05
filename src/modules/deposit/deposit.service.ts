@@ -2,6 +2,7 @@ import { prisma } from "../../config/database";
 import { crossmintService, type ChainType } from "../../services/crossmint.service";
 import { ENV } from "../../config/env";
 import { ledgerService } from "../ledger/ledger.service";
+import { feeService } from "../fees/fee.service";
 import { logger } from "../../utils/logger";
 
 const CHAIN_MAP: Record<string, { chain: ChainType; alias: string }> = {
@@ -153,7 +154,8 @@ export class DepositService {
       throw new Error("Deposit request not found");
     }
 
-    const fee = Number(depositRequest.amount) * 0.01;
+    const { totalFee } = await feeService.calculateDepositFee(Number(depositRequest.amount));
+    const fee = totalFee;
     const netAmount = Number(depositRequest.amount) - fee;
 
     await prisma.depositRequest.update({

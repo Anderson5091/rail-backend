@@ -3,16 +3,10 @@ import { Router, Response } from "express";
 import { prisma } from "../../config/database";
 import { authenticate, AuthRequest } from "../../middleware/auth";
 import { withdrawalService } from "./withdrawal.service";
+import { feeService } from "../fees/fee.service";
 import { logger } from "../../utils/logger";
 
 const router = Router();
-
-const FEE_SCHEDULE: Record<string, number> = {
-  BASE: 1,
-  POLYGON: 1,
-  SOLANA: 1,
-  ETHEREUM: 10,
-};
 
 const createWithdrawalSchema = z.object({
   network: z.enum(["BASE", "ETHEREUM", "POLYGON", "SOLANA"]),
@@ -31,7 +25,8 @@ router.post("/", authenticate, async (req: AuthRequest, res: Response) => {
     return res.status(400).json({ error: "Wallet not found" });
   }
 
-  const fee = FEE_SCHEDULE[data.network] || 1;
+  const { totalFee } = await feeService.calculateWithdrawalFee(data.amount, data.network);
+  const fee = totalFee;
 
   const withdrawal = await withdrawalService.createWithdrawal({
     userId: req.userId!,
