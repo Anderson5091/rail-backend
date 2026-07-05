@@ -29,7 +29,7 @@ router.post("/login", authLimiter, async (req: AuthRequest, res: Response) => {
   const refreshToken = generateRefreshToken(admin.id);
 
   res.json({
-    user: { id: admin.id, email: admin.email, role: admin.role },
+    user: { id: admin.id, email: admin.email, name: admin.name, role: admin.role },
     token,
     refreshToken,
   });
@@ -57,7 +57,7 @@ router.post("/refresh", async (req: AuthRequest, res: Response) => {
 router.get("/me", authenticate, async (req: AuthRequest, res: Response) => {
   const admin = await prisma.adminUser.findUnique({
     where: { id: req.userId },
-    select: { id: true, email: true, role: true, status: true, createdAt: true },
+    select: { id: true, email: true, name: true, role: true, status: true, createdAt: true },
   });
   if (!admin) throw new AppError(404, "Admin not found");
   if (admin.status !== "ACTIVE") throw new AppError(403, "Account is inactive");
@@ -68,6 +68,7 @@ router.get("/me", authenticate, async (req: AuthRequest, res: Response) => {
 router.post("/register", authenticate, requireRole("SUPER_ADMIN"), async (req: AuthRequest, res: Response) => {
   const registerSchema = z.object({
     email: z.string().email(),
+    name: z.string().optional(),
     password: z.string().min(8),
     role: z.enum(["SUPER_ADMIN", "ADMIN", "COMPLIANCE", "OPS", "TREASURY"]).default("OPS"),
   });
@@ -79,11 +80,11 @@ router.post("/register", authenticate, requireRole("SUPER_ADMIN"), async (req: A
 
   const passwordHash = await bcrypt.hash(data.password, 12);
   const admin = await prisma.adminUser.create({
-    data: { email: data.email, passwordHash, role: data.role },
+    data: { email: data.email, name: data.name, passwordHash, role: data.role },
   });
 
   res.status(201).json({
-    user: { id: admin.id, email: admin.email, role: admin.role },
+    user: { id: admin.id, email: admin.email, name: admin.name, role: admin.role },
   });
 });
 

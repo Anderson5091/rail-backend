@@ -193,10 +193,46 @@ router.post("/logout", (_req: Request, res: Response) => {
 router.get("/me", authenticate, async (req: AuthRequest, res: Response) => {
   const user = await prisma.user.findUnique({
     where: { id: req.userId },
-    select: { id: true, email: true, phone: true, fullName: true, createdAt: true },
+    select: { id: true, email: true, phone: true, fullName: true, country: true, createdAt: true },
   });
   if (!user) throw new AppError(404, "User not found");
   res.json(user);
+});
+
+const updateProfileSchema = z.object({
+  fullName: z.string().min(1).optional(),
+  phone: z.string().optional(),
+  country: z.string().optional(),
+});
+
+router.put("/me", authenticate, async (req: AuthRequest, res: Response) => {
+  const data = updateProfileSchema.parse(req.body);
+  const user = await prisma.user.update({
+    where: { id: req.userId },
+    data,
+    select: { id: true, email: true, phone: true, fullName: true, country: true, createdAt: true },
+  });
+  res.json(user);
+});
+
+const changePasswordSchema = z.object({
+  currentPassword: z.string().min(1),
+  newPassword: z.string().min(8),
+});
+
+router.put("/password", authenticate, async (req: AuthRequest, res: Response) => {
+  const { currentPassword, newPassword } = changePasswordSchema.parse(req.body);
+
+  const user = await prisma.user.findUnique({ where: { id: req.userId } });
+  if (!user) throw new AppError(404, "User not found");
+
+  const valid = await bcrypt.compare(currentPassword, user.password);
+  if (!valid) throw new AppError(400, "Current password is incorrect");
+
+  const password = await bcrypt.hash(newPassword, 12);
+  await prisma.user.update({ where: { id: req.userId }, data: { password } });
+
+  res.json({ message: "Password updated successfully" });
 });
 
 export { router as authRoutes };

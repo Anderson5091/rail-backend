@@ -25,6 +25,7 @@ import { depositRoutes } from "./modules/deposit/deposit.routes";
 import { withdrawalRoutes } from "./modules/withdrawal/withdrawal.routes";
 import { agentRoutes } from "./modules/agent/agent.routes";
 import { agentAuthRoutes } from "./modules/agent/agent-auth.routes";
+import { feeRoutes } from "./modules/fees/fee.routes";
 
 const app = express();
 const httpServer = createServer(app);
@@ -63,6 +64,7 @@ app.use("/api/v1/admin/auth", adminAuthRoutes);
 app.use("/api/v1/production", productionRoutes);
 app.use("/api/v1/agent", agentRoutes);
 app.use("/api/v1/agent/auth", agentAuthRoutes);
+app.use("/api/v1/admin/fees", feeRoutes);
 
 app.use(errorHandler);
 

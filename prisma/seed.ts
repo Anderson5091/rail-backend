@@ -1,3 +1,4 @@
+import crypto from "crypto";
 import { PrismaClient } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import bcrypt from "bcryptjs";
@@ -101,6 +102,32 @@ async function main() {
     }
 
     console.log(`Created agent ${agentData.email} (${agentData.type}) with wallet(s)`);
+  }
+
+  const FEE_CONFIGS = [
+    { transactionType: "AGENT_TRANSFER", label: "Agent Transfer", description: "Transfer initiated by agent (cash-in)", systemFeeEnabled: true, systemFeeMode: "BOTH", systemFixedFee: 2, systemPercentFee: 1, processingFeeEnabled: true, processingFeeMode: "FIXED", processingFixedFee: 1, processingPercentFee: 0, superAdminOnly: false },
+    { transactionType: "WEB_TRANSFER", label: "Web Transfer", description: "Transfer initiated via web app", systemFeeEnabled: true, systemFeeMode: "BOTH", systemFixedFee: 2, systemPercentFee: 1, processingFeeEnabled: false, processingFeeMode: "FIXED", processingFixedFee: 0, processingPercentFee: 0, superAdminOnly: false },
+    { transactionType: "WEB_DEPOSIT", label: "Web Deposit", description: "USDT deposit via web app", systemFeeEnabled: true, systemFeeMode: "FIXED", systemFixedFee: 1, systemPercentFee: 0, processingFeeEnabled: false, processingFeeMode: "FIXED", processingFixedFee: 0, processingPercentFee: 0, superAdminOnly: false },
+    { transactionType: "AGENT_DEPOSIT", label: "Agent Deposit", description: "USDT deposit processed by agent", systemFeeEnabled: true, systemFeeMode: "FIXED", systemFixedFee: 1, systemPercentFee: 0, processingFeeEnabled: true, processingFeeMode: "FIXED", processingFixedFee: 0.5, processingPercentFee: 0, superAdminOnly: false },
+    { transactionType: "WEB_WITHDRAW", label: "Web Withdraw", description: "USDT withdrawal via web app", systemFeeEnabled: true, systemFeeMode: "FIXED", systemFixedFee: 2, systemPercentFee: 0, processingFeeEnabled: false, processingFeeMode: "FIXED", processingFixedFee: 0, processingPercentFee: 0, superAdminOnly: false },
+    { transactionType: "AGENT_CASH_WITHDRAW", label: "Agent Cash Withdraw", description: "Cash withdrawal processed by agent", systemFeeEnabled: true, systemFeeMode: "FIXED", systemFixedFee: 1, systemPercentFee: 0.5, processingFeeEnabled: true, processingFeeMode: "FIXED", processingFixedFee: 1, processingPercentFee: 0, superAdminOnly: false },
+    { transactionType: "PAYOUT", label: "Payout", description: "Payout to beneficiary (bank/mobile/cash)", systemFeeEnabled: false, systemFeeMode: "FIXED", systemFixedFee: 0, systemPercentFee: 0, processingFeeEnabled: true, processingFeeMode: "PERCENTAGE", processingFixedFee: 0, processingPercentFee: 0.5, superAdminOnly: false },
+    { transactionType: "P2P", label: "Peer to Peer", description: "Internal P2P transfer between users", systemFeeEnabled: true, systemFeeMode: "FIXED", systemFixedFee: 0, systemPercentFee: 0, processingFeeEnabled: false, processingFeeMode: "FIXED", processingFixedFee: 0, processingPercentFee: 0, superAdminOnly: true },
+  ];
+
+  for (const fc of FEE_CONFIGS) {
+    const existing = await prisma.feeConfig.findUnique({ where: { transactionType: fc.transactionType } });
+    if (existing) {
+      console.log(`Fee config ${fc.transactionType} already exists — skipping`);
+      continue;
+    }
+    await prisma.feeConfig.create({
+      data: {
+        id: crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}_${Math.random()}`,
+        ...fc,
+      },
+    });
+    console.log(`Created fee config for ${fc.transactionType}`);
   }
 
   for (const tw of TREASURY_WALLETS) {

@@ -416,14 +416,14 @@ router.get("/fraud/analyze/:userId", authenticate, requireRole("SUPER_ADMIN", "A
 
 router.get("/admins", authenticate, requireRole("SUPER_ADMIN"), async (_req: AuthRequest, res: Response) => {
   const admins = await prisma.adminUser.findMany({
-    select: { id: true, email: true, role: true, status: true, createdAt: true },
+    select: { id: true, email: true, name: true, role: true, status: true, createdAt: true },
     orderBy: { createdAt: "desc" },
   });
   res.json(admins);
 });
 
 router.post("/admins", authenticate, requireRole("SUPER_ADMIN"), async (req: AuthRequest, res: Response) => {
-  const { email, password, role } = req.body;
+  const { email, name, password, role } = req.body;
   if (!email || !password) return res.status(400).json({ error: "email and password are required" });
   if (password.length < 8) return res.status(400).json({ error: "Password must be at least 8 characters" });
   if (!["SUPER_ADMIN", "ADMIN", "COMPLIANCE", "OPS", "TREASURY"].includes(role)) {
@@ -435,8 +435,8 @@ router.post("/admins", authenticate, requireRole("SUPER_ADMIN"), async (req: Aut
 
   const passwordHash = await bcrypt.hash(password, 12);
   const admin = await prisma.adminUser.create({
-    data: { email, passwordHash, role },
-    select: { id: true, email: true, role: true, status: true, createdAt: true },
+    data: { email, name, passwordHash, role },
+    select: { id: true, email: true, name: true, role: true, status: true, createdAt: true },
   });
 
   await prisma.adminActionLog.create({
