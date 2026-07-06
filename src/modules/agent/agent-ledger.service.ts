@@ -1,5 +1,6 @@
 import { prisma } from "../../config/database";
 import { logger } from "../../utils/logger";
+import { crossmintService, type ChainType } from "../../services/crossmint.service";
 
 export class AgentLedgerService {
   async credit(
@@ -80,6 +81,26 @@ export class AgentLedgerService {
     const available = Number(wallet.balance);
     const swapAmount = Math.min(shortfall, available);
     if (swapAmount <= 0) throw new Error("Insufficient agent balance in both ledger and Crossmint wallet");
+
+    const hotWallet = await prisma.treasuryWallet.findFirst({
+      where: { walletType: "HOT", chain: wallet.chain },
+    });
+
+    if (wallet.walletLocator && hotWallet?.address) {
+      const chainType = wallet.chain as ChainType;
+      try {
+        await crossmintService.sendTransfer(
+          wallet.walletLocator,
+          hotWallet.address,
+          "usdt",
+          swapAmount.toString(),
+          chainType
+        );
+      } catch (error) {
+        logger.error(`[AgentLedger] Crossmint transfer failed during auto-swap for agent ${agentId}:`, error);
+        throw new Error("Crossmint transfer failed during auto-swap");
+      }
+    }
 
     await prisma.agentWallet.update({
       where: { id: wallet.id },

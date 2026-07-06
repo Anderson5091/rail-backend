@@ -652,6 +652,21 @@ router.post("/:id/swap", authenticate, requireRole("AGENT_PARTNER", "AGENT_INTER
   }
 });
 
+router.post("/:id/withdraw-wallet", authenticate, requireRole("AGENT_PARTNER", "AGENT_INTERNAL"), async (req: AuthRequest, res: Response) => {
+  try {
+    const { amount } = req.body;
+    if (!amount || amount <= 0) {
+      return res.status(400).json({ error: "amount is required and must be greater than 0" });
+    }
+
+    await agentService.walletWithdraw(String(req.params.id), Number(amount));
+    res.json({ success: true, message: `Successfully withdrew ${Number(amount)} USDT from wallet to hot treasury` });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "Wallet withdraw failed";
+    res.status(400).json({ error: message });
+  }
+});
+
 router.post("/:id/confirm-payout", authenticate, requireRole("AGENT_PARTNER", "AGENT_INTERNAL"), async (req: AuthRequest, res: Response) => {
   try {
     const { transferId, proofImage, proofMimeType } = req.body;

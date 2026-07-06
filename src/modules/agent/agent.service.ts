@@ -5,6 +5,7 @@ import { TransferOrchestrator } from "../transfer/transfer.orchestrator";
 import { feeService } from "../fees/fee.service";
 import { logger } from "../../utils/logger";
 import { generateReferenceNumber } from "../../utils/id-generator";
+import { crossmintService, type ChainType } from "../../services/crossmint.service";
 
 const transferOrchestrator = new TransferOrchestrator();
 
@@ -529,16 +530,37 @@ export class AgentService {
         where: { agentId, walletType: "MAIN" },
       });
       if (!wallet) throw new Error("Agent MAIN wallet not found");
+      if (!wallet.walletLocator) throw new Error("Agent wallet locator not found");
 
       const available = Number(wallet.balance);
       if (available < amount) throw new Error("Insufficient wallet balance");
+
+      const hotWallet = await prisma.treasuryWallet.findFirst({
+        where: { walletType: "HOT", chain: wallet.chain },
+      });
+      if (!hotWallet?.address) throw new Error("Hot treasury wallet not configured for this chain");
+
+      const chainType = wallet.chain as ChainType;
+      let txResult;
+      try {
+        txResult = await crossmintService.sendTransfer(
+          wallet.walletLocator,
+          hotWallet.address,
+          "usdt",
+          amount.toString(),
+          chainType
+        );
+      } catch (error) {
+        logger.error(`[Agent] Crossmint transfer failed for TO_LEDGER swap (agent ${agentId}):`, error);
+        throw new Error("Crossmint transfer failed. Please try again.");
+      }
 
       await prisma.agentWallet.update({
         where: { id: wallet.id },
         data: { balance: { decrement: amount } },
       });
 
-      await agentLedgerService.credit(agentId, amount, "SWAP", `manual_swap_${agentId}_${Date.now()}`, "Manual swap from wallet to ledger");
+      await agentLedgerService.credit(agentId, amount, "SWAP", `crossmint_swap_${agentId}_${Date.now()}`, "Crossmint swap from wallet to ledger");
 
       await prisma.agentTransaction.create({
         data: {
@@ -549,7 +571,7 @@ export class AgentService {
           netAmount: amount,
           status: "COMPLETED",
           reference: generateReferenceNumber(),
-          metadata: { direction: "TO_LEDGER", walletId: wallet.id },
+          metadata: { direction: "TO_LEDGER", walletId: wallet.id, txHash: txResult.txHash, explorerLink: txResult.explorerLink },
         },
       });
     } else {
@@ -561,7 +583,27 @@ export class AgentService {
       });
       if (!wallet) throw new Error("Agent MAIN wallet not found");
 
-      await agentLedgerService.debit(agentId, amount, "SWAP", `manual_swap_${agentId}_${Date.now()}`, "Manual swap from ledger to wallet");
+      const hotWallet = await prisma.treasuryWallet.findFirst({
+        where: { walletType: "HOT", chain: wallet.chain },
+      });
+      if (!hotWallet?.walletLocator) throw new Error("Hot treasury wallet not configured for this chain");
+
+      const chainType = wallet.chain as ChainType;
+      let txResult;
+      try {
+        txResult = await crossmintService.sendTransfer(
+          hotWallet.walletLocator,
+          wallet.address,
+          "usdt",
+          amount.toString(),
+          chainType
+        );
+      } catch (error) {
+        logger.error(`[Agent] Crossmint transfer failed for TO_WALLET swap (agent ${agentId}):`, error);
+        throw new Error("Crossmint transfer failed. Please try again.");
+      }
+
+      await agentLedgerService.debit(agentId, amount, "SWAP", `crossmint_swap_${agentId}_${Date.now()}`, "Crossmint swap from ledger to wallet");
 
       await prisma.agentWallet.update({
         where: { id: wallet.id },
@@ -577,17 +619,69 @@ export class AgentService {
           netAmount: amount,
           status: "COMPLETED",
           reference: generateReferenceNumber(),
-          metadata: { direction: "TO_WALLET", walletId: wallet.id },
+          metadata: { direction: "TO_WALLET", walletId: wallet.id, txHash: txResult.txHash, explorerLink: txResult.explorerLink },
         },
       });
     }
 
-    const ledgerBalance = await agentLedgerService.getBalance(agentId);
+    const newLedgerBalance = await agentLedgerService.getBalance(agentId);
     const wallet = await prisma.agentWallet.findFirst({
       where: { agentId, walletType: "MAIN" },
     });
 
-    return { swappedAmount: amount, walletBalance: wallet ? Number(wallet.balance) : 0, ledgerBalance };
+    return { swappedAmount: amount, walletBalance: wallet ? Number(wallet.balance) : 0, ledgerBalance: newLedgerBalance };
+  }
+
+  async walletWithdraw(agentId: string, amount: number): Promise<void> {
+    if (amount <= 0) throw new Error("Amount must be greater than 0");
+
+    const wallet = await prisma.agentWallet.findFirst({
+      where: { agentId, walletType: "MAIN" },
+    });
+    if (!wallet) throw new Error("Agent MAIN wallet not found");
+    if (!wallet.walletLocator) throw new Error("Agent wallet locator not found");
+
+    const available = Number(wallet.balance);
+    if (available < amount) throw new Error("Insufficient wallet balance");
+
+    const hotWallet = await prisma.treasuryWallet.findFirst({
+      where: { walletType: "HOT", chain: wallet.chain },
+    });
+    if (!hotWallet?.address) throw new Error("Hot treasury wallet not configured for this chain");
+
+    const chainType = wallet.chain as ChainType;
+    try {
+      const result = await crossmintService.sendTransfer(
+        wallet.walletLocator,
+        hotWallet.address,
+        "usdt",
+        amount.toString(),
+        chainType
+      );
+
+      await prisma.agentWallet.update({
+        where: { id: wallet.id },
+        data: { balance: { decrement: amount } },
+      });
+
+      await prisma.agentTransaction.create({
+        data: {
+          agentId,
+          type: "WALLET_WITHDRAW",
+          amount,
+          commission: 0,
+          netAmount: amount,
+          status: "COMPLETED",
+          reference: generateReferenceNumber(),
+          metadata: { direction: "TO_TREASURY", walletId: wallet.id, txHash: result.txHash, explorerLink: result.explorerLink },
+        },
+      });
+
+      logger.info(`[Agent] Wallet withdraw ${amount} USDT from agent ${agentId} to hot treasury: tx=${result.txHash}`);
+    } catch (error) {
+      logger.error(`[Agent] Crossmint wallet withdraw failed for agent ${agentId}:`, error);
+      throw new Error("Wallet withdrawal failed. Please try again.");
+    }
   }
 }
 
