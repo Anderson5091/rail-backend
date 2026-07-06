@@ -2,6 +2,7 @@ import { prisma } from "../../config/database";
 import { ledgerService } from "../ledger/ledger.service";
 import { agentLedgerService } from "./agent-ledger.service";
 import { TransferOrchestrator } from "../transfer/transfer.orchestrator";
+import { feeService } from "../fees/fee.service";
 import { logger } from "../../utils/logger";
 import { generateReferenceNumber } from "../../utils/id-generator";
 
@@ -281,6 +282,9 @@ export class AgentService {
       }
     }
 
+    const { totalFee } = await feeService.calculateAgentTopupFee(usdtAmount);
+    const netAmount = usdtAmount - totalFee;
+
     const hotWallet = await prisma.treasuryWallet.findFirst({
       where: { walletType: "HOT" },
     });
@@ -309,12 +313,12 @@ export class AgentService {
         fromWalletId: hotWallet.id,
         amount: usdtAmount,
         network: hotWallet.network,
-        reason: `${isAdmin ? callerRole : "Internal agent"} ${callerId} topped up partner ${partnerAgentId}`,
+        reason: `${isAdmin ? callerRole : "Internal agent"} ${callerId} topped up partner ${partnerAgentId}${totalFee > 0 ? ` (net: ${netAmount}, fee: ${totalFee})` : ""}`,
         status: "COMPLETED",
       },
     });
 
-    await agentLedgerService.credit(partnerAgentId, usdtAmount, "TOPUP", `topup_${callerId}_${partnerAgentId}_${Date.now()}`, `Top-up from ${isAdmin ? callerRole : "internal agent"} ${callerId}`);
+    await agentLedgerService.credit(partnerAgentId, netAmount, "TOPUP", `topup_${callerId}_${partnerAgentId}_${Date.now()}`, `Top-up from ${isAdmin ? callerRole : "internal agent"} ${callerId}`);
 
     if (!isAdmin) {
       const tx = await prisma.agentTransaction.create({
@@ -322,8 +326,8 @@ export class AgentService {
           agentId: callerId,
           type: "TOPUP",
           amount: usdtAmount,
-          commission: 0,
-          netAmount: usdtAmount,
+          commission: totalFee,
+          netAmount,
           userRef: partnerAgentId,
           status: "COMPLETED",
           reference: generateReferenceNumber(),
@@ -331,12 +335,12 @@ export class AgentService {
         },
       });
 
-      logger.info(`[Agent] Internal agent ${callerId} topped up partner ${partnerAgentId} with ${usdtAmount} USDT`);
+      logger.info(`[Agent] Internal agent ${callerId} topped up partner ${partnerAgentId} with ${usdtAmount} USDT${totalFee > 0 ? ` (net: ${netAmount}, fee: ${totalFee})` : ""}`);
       return tx;
     }
 
-    logger.info(`[Agent] ${callerRole} ${callerId} topped up partner ${partnerAgentId} with ${usdtAmount} USDT`);
-    return { success: true, amount: usdtAmount, partnerAgentId };
+    logger.info(`[Agent] ${callerRole} ${callerId} topped up partner ${partnerAgentId} with ${usdtAmount} USDT${totalFee > 0 ? ` (net: ${netAmount}, fee: ${totalFee})` : ""}`);
+    return { success: true, amount: netAmount, fee: totalFee, partnerAgentId };
   }
 
   async getAgentKpi(agentId: string, period?: string) {

@@ -95,6 +95,10 @@ export class FeeService {
   async calculateP2pFee(amount: number) {
     return this.calculateByTransactionType("P2P", amount);
   }
+
+  async calculateAgentTopupFee(amount: number) {
+    return this.calculateByTransactionType("AGENT_TOPUP", amount);
+  }
 }
 
 export const feeService = new FeeService();

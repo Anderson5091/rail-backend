@@ -113,6 +113,7 @@ async function main() {
     { transactionType: "AGENT_CASH_WITHDRAW", label: "Agent Cash Withdraw", description: "Cash withdrawal processed by agent", systemFeeEnabled: true, systemFeeMode: "FIXED", systemFixedFee: 1, systemPercentFee: 0.5, processingFeeEnabled: true, processingFeeMode: "FIXED", processingFixedFee: 1, processingPercentFee: 0, superAdminOnly: false },
     { transactionType: "PAYOUT", label: "Payout", description: "Payout to beneficiary (bank/mobile/cash)", systemFeeEnabled: false, systemFeeMode: "FIXED", systemFixedFee: 0, systemPercentFee: 0, processingFeeEnabled: true, processingFeeMode: "PERCENTAGE", processingFixedFee: 0, processingPercentFee: 0.5, superAdminOnly: false },
     { transactionType: "P2P", label: "Peer to Peer", description: "Internal P2P transfer between users", systemFeeEnabled: true, systemFeeMode: "FIXED", systemFixedFee: 0, systemPercentFee: 0, processingFeeEnabled: false, processingFeeMode: "FIXED", processingFixedFee: 0, processingPercentFee: 0, superAdminOnly: true },
+    { transactionType: "AGENT_TOPUP", label: "Agent Topup", description: "Agent-to-agent topup fee", systemFeeEnabled: true, systemFeeMode: "FIXED", systemFixedFee: 1, systemPercentFee: 0, processingFeeEnabled: false, processingFeeMode: "FIXED", processingFixedFee: 0, processingPercentFee: 0, superAdminOnly: false },
   ];
 
   for (const fc of FEE_CONFIGS) {
