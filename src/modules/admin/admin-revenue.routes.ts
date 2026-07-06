@@ -15,7 +15,7 @@ function getPeriodRange(period: string, from?: string, to?: string) {
         start = new Date(now.getFullYear(), 0, 1);
         break;
       case "month":
-        start = new Date(now.getFullYear(), now.getMonth(), 1);
+        start = new Date(now.getFullYear(), now.getMonth() - 11, 1);
         break;
       default:
         start = new Date(now);
@@ -51,7 +51,7 @@ router.get("/system", authenticate, requireRole("SUPER_ADMIN", "ADMIN", "TREASUR
     prisma.withdrawal.aggregate({ _sum: { fee: true }, where: { ...periodFeeFilter, status: "COMPLETED" } }),
   ]);
 
-  const step = period === "year" ? "month" : "day";
+  const step = period === "day" ? "day" : "month";
   const fn = (d: Date) => keyFn(d, step);
 
   const [transferByPeriod, depositByPeriod, withdrawalByPeriod] = await Promise.all([
@@ -123,7 +123,7 @@ router.get("/agents", authenticate, requireRole("SUPER_ADMIN", "ADMIN", "TREASUR
     prisma.agentKpi.aggregate({ _sum: { totalCommission: true }, where: { ...filter, periodEnd: { gte: start, lte: end } } }),
   ]);
 
-  const step = period === "year" ? "month" : "day";
+  const step = period === "day" ? "day" : "month";
   const fn = (d: Date) => keyFn(d, step);
 
   const [commByPeriod, kpiByPeriod] = await Promise.all([
