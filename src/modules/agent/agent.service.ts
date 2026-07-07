@@ -367,6 +367,34 @@ export class AgentService {
     }));
   }
 
+  private async fetchAndSyncCrossmintBalance(wallet: AgentWalletRow): Promise<number> {
+    if (!wallet.walletLocator) {
+      return Number(wallet.balance);
+    }
+    try {
+      const chainType = wallet.chain as ChainType;
+      const balances = await crossmintService.getWalletBalance(
+        wallet.walletLocator,
+        ["usdt"],
+        chainType
+      );
+      const usdtToken = balances.tokens?.find(
+        (t: any) => t.symbol?.toLowerCase() === "usdt"
+      );
+      const liveBalance = usdtToken ? Number(usdtToken.amount) : 0;
+      if (liveBalance !== Number(wallet.balance)) {
+        await prisma.agentWallet.update({
+          where: { id: wallet.id },
+          data: { balance: liveBalance },
+        });
+      }
+      return liveBalance;
+    } catch (error) {
+      logger.warn(`[Agent] Failed to fetch Crossmint balance for wallet ${wallet.id}: ${error}`);
+      return Number(wallet.balance);
+    }
+  }
+
   async getAgentDashboard(agentId: string) {
     const agent = await prisma.agent.findUnique({
       where: { id: agentId },
@@ -400,6 +428,27 @@ export class AgentService {
 
     const ledgerBalance = await agentLedgerService.getBalance(agentId);
 
+    const walletsWithLiveBalance = await Promise.all(
+      agentWallets
+        .filter((w: AgentWalletRow) => w.walletType !== "COMMISSION")
+        .map(async (w: AgentWalletRow) => {
+          const liveBalance = w.walletLocator
+            ? await this.fetchAndSyncCrossmintBalance(w)
+            : Number(w.balance);
+          return {
+            id: w.id,
+            walletType: w.walletType === "BASE_TREASURY" ? "MAIN" : w.walletType,
+            network: w.network,
+            address: w.address,
+            balance: liveBalance,
+          };
+        })
+    );
+
+    const mainWallet = walletsWithLiveBalance.find(
+      (w) => w.walletType === "MAIN"
+    );
+
     return {
       id: agent.id,
       email: agent.email,
@@ -409,7 +458,7 @@ export class AgentService {
       kpiRating: agent.kpiRating,
       totalRewards: Number(agent.totalRewards),
       ledgerBalance,
-      walletBalance: wallet ? Number(wallet.balance) : null,
+      walletBalance: mainWallet?.balance ?? null,
       todayVolume: todayTx.reduce((sum: number, t: AgentTransactionRow) => sum + Number(t.amount), 0),
       todayCommission: todayTx.reduce((sum: number, t: AgentTransactionRow) => sum + Number(t.commission), 0),
       todayTxCount: todayTx.length,
@@ -424,15 +473,7 @@ export class AgentService {
         metadata: t.metadata,
         createdAt: t.createdAt,
       })),
-      wallets: agentWallets
-        .filter((w: AgentWalletRow) => w.walletType !== "COMMISSION")
-        .map((w: AgentWalletRow) => ({
-          id: w.id,
-          walletType: w.walletType === "BASE_TREASURY" ? "MAIN" : w.walletType,
-          network: w.network,
-          address: w.address,
-          balance: Number(w.balance),
-        })),
+      wallets: walletsWithLiveBalance,
       pendingTransfers: pendingTransfers.map((t: any) => ({
         id: t.id,
         beneficiaryId: t.beneficiaryId,
