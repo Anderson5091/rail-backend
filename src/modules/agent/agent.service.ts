@@ -430,6 +430,7 @@ export class AgentService {
           id: w.id,
           walletType: w.walletType === "BASE_TREASURY" ? "MAIN" : w.walletType,
           network: w.network,
+          address: w.address,
           balance: Number(w.balance),
         })),
       pendingTransfers: pendingTransfers.map((t: any) => ({
