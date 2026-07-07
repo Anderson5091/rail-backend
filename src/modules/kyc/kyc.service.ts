@@ -54,18 +54,24 @@ class KycService {
     const firstName = nameParts[0] || "";
     const lastName = nameParts.slice(1).join(" ") || firstName;
 
+    const toDiditDate = (d: string) => {
+      const [dd, mm, yyyy] = d.split("-");
+      return `${yyyy}-${mm}-${dd}`;
+    };
+    const diditDob = toDiditDate(input.dateOfBirth);
+
     const [amlResult, dbResult] = await Promise.all([
       diditService.amlScreen({
         first_name: firstName,
         last_name: lastName,
-        date_of_birth: input.dateOfBirth,
+        date_of_birth: diditDob,
         nationality: input.nationality,
         country: input.country,
       }),
       diditService.databaseValidation({
         first_name: firstName,
         last_name: lastName,
-        date_of_birth: input.dateOfBirth,
+        date_of_birth: diditDob,
         country: input.country,
       }).catch(() => ({ status: "Skipped", score: 0, match_rate: 0 })),
     ]);

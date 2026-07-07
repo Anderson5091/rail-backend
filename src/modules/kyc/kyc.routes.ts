@@ -9,7 +9,7 @@ const router = Router();
 
 const tier1Schema = z.object({
   fullName: z.string().min(1).max(255),
-  dateOfBirth: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Use YYYY-MM-DD format"),
+  dateOfBirth: z.string().regex(/^\d{2}-\d{2}-\d{4}$/, "Use DD-MM-YYYY format"),
   nationality: z.string().min(1).max(100),
   country: z.string().min(1).max(100),
   address: z.string().min(1),
