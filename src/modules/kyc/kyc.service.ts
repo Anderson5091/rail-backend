@@ -13,6 +13,7 @@ export interface Tier1Input {
 
 export interface Tier2Input {
   idImage: string;
+  idImageBack?: string;
   selfieImage: string;
   documentType: string;
 }
@@ -136,7 +137,7 @@ class KycService {
     if (!profile) throw new AppError(400, "Submit Tier 1 before Tier 2");
 
     const [idResult, livenessResult] = await Promise.all([
-      diditService.verifyId(input.idImage),
+      diditService.verifyId(input.idImage, input.idImageBack),
       diditService.passiveLiveness(input.selfieImage),
     ]);
 
@@ -167,7 +168,7 @@ class KycService {
         eventType: "TIER2_SUBMIT",
         status,
         provider: "didit",
-        rawPayload: { idVerification: idResult, liveness: livenessResult, faceMatch: faceMatchResult },
+        rawPayload: { idVerification: idResult, liveness: livenessResult, faceMatch: faceMatchResult, hasBackImage: !!input.idImageBack },
       },
     });
 

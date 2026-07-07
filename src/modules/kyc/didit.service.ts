@@ -76,10 +76,14 @@ class DiditService {
     }
   }
 
-  async verifyId(imageBase64: string): Promise<DiditIdResult> {
-    return this.post<DiditIdResult>("/id-verification/", {
-      image: imageBase64,
-    });
+  async verifyId(imageBase64: string, imageBackBase64?: string): Promise<DiditIdResult> {
+    const body: Record<string, any> = {
+      document_front: imageBase64,
+    };
+    if (imageBackBase64) {
+      body.document_back = imageBackBase64;
+    }
+    return this.post<DiditIdResult>("/id-verification/", body);
   }
 
   async passiveLiveness(imageBase64: string): Promise<DiditLivenessResult> {

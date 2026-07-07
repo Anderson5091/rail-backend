@@ -17,6 +17,7 @@ const tier1Schema = z.object({
 
 const tier2Schema = z.object({
   idImage: z.string().min(1, "idImage (base64) required"),
+  idImageBack: z.string().optional(),
   selfieImage: z.string().min(1, "selfieImage (base64) required"),
   documentType: z.enum(["PASSPORT", "NATIONAL_ID", "DRIVER_LICENSE"]),
 });
