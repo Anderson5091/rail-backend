@@ -34,7 +34,7 @@ router.get("/status", authenticate, async (req: AuthRequest, res: Response) => {
 
 router.post("/tier-1", authenticate, async (req: AuthRequest, res: Response) => {
   const parsed = tier1Schema.safeParse(req.body);
-  if (!parsed.success) throw new AppError(400, "Validation failed");
+  if (!parsed.success) throw new AppError(400, `Validation failed: ${parsed.error.issues.map(i => i.message).join("; ")}`);
 
   const result = await kycService.processTier1(req.userId!, parsed.data);
   res.json(result);

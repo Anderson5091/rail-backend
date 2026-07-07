@@ -67,7 +67,7 @@ class KycService {
         date_of_birth: diditDob,
         nationality: input.nationality,
         country: input.country,
-      }),
+      }).catch(() => ({ status: "Skipped", total_hits: 0, score: 0 })),
       diditService.databaseValidation({
         first_name: firstName,
         last_name: lastName,

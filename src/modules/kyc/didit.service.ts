@@ -83,11 +83,11 @@ class DiditService {
     if (imageBackBase64) {
       body.document_back = imageBackBase64;
     }
-    return this.post<DiditIdResult>("/id-verification/", body);
+    return this.post<DiditIdResult>("/v3/id-verification/", body);
   }
 
   async passiveLiveness(imageBase64: string): Promise<DiditLivenessResult> {
-    return this.post<DiditLivenessResult>("/passive-liveness/", {
+    return this.post<DiditLivenessResult>("/v3/passive-liveness/", {
       image: imageBase64,
     });
   }
@@ -96,14 +96,14 @@ class DiditService {
     selfieBase64: string,
     idPortraitBase64: string
   ): Promise<DiditFaceMatchResult> {
-    return this.post<DiditFaceMatchResult>("/face-match/", {
+    return this.post<DiditFaceMatchResult>("/v3/face-match/", {
       image_1: selfieBase64,
       image_2: idPortraitBase64,
     });
   }
 
   async verifyProofOfAddress(imageBase64: string): Promise<DiditPoaResult> {
-    return this.post<DiditPoaResult>("/poa/", {
+    return this.post<DiditPoaResult>("/v3/poa/", {
       image: imageBase64,
     });
   }
@@ -115,7 +115,7 @@ class DiditService {
     nationality?: string;
     country?: string;
   }): Promise<DiditAmlResult> {
-    return this.post<DiditAmlResult>("/aml/", params);
+    return this.post<DiditAmlResult>("/v3/aml/", params);
   }
 
   async databaseValidation(params: {
@@ -124,7 +124,7 @@ class DiditService {
     date_of_birth: string;
     country: string;
   }): Promise<DiditDbValidationResult> {
-    return this.post<DiditDbValidationResult>("/database-validation/", params);
+    return this.post<DiditDbValidationResult>("/v3/database-validation/", params);
   }
 }
 

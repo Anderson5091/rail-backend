@@ -54,5 +54,5 @@ export const ENV = {
 
   // Didit Configuration
   DIDIT_API_KEY: process.env.DIDIT_API_KEY || "",
-  DIDIT_API_BASE_URL: process.env.DIDIT_API_BASE_URL || "https://verification.didit.me/v3/",
+  DIDIT_API_BASE_URL: process.env.DIDIT_API_BASE_URL || "https://verification.didit.me",
 };
