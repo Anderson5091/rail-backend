@@ -113,6 +113,8 @@ export function generateModelId(model: string, data?: any): string | null {
       return `QSAT${rand(14)}`;
     case "AgentKpi":
       return `QSAK${rand(14)}`;
+    case "KycEvent":
+      return `QSKE${rand(14)}`;
     case "AdminActionLog":
       return `QSAL${rand(14)}`;
     case "SystemAlert":

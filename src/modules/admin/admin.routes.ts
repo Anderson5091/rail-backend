@@ -7,11 +7,11 @@ import { ledgerService } from "../ledger/ledger.service";
 const router = Router();
 
 router.get("/dashboard", authenticate, requireRole("SUPER_ADMIN", "ADMIN", "COMPLIANCE", "TREASURY", "OPS"), async (_req: AuthRequest, res: Response) => {
-  const [totalUsers, activeUsers, totalTransfers, pendingKyc, totalVolume, failedPayouts, openCases, fraudAlerts, partnerAgents, internalAgents, alerts, recentActivity] = await Promise.all([
+  const [totalUsers, activeUsers, totalTransfers, pendingKyc, totalVolume, failedPayouts, openCases, fraudAlerts, partnerAgents, internalAgents, alerts, recentActivity, tier1Count, tier2Count, tier3Count] = await Promise.all([
     prisma.user.count(),
     prisma.user.count({ where: { wallets: { status: "ACTIVE" } } }),
     prisma.transfer.count(),
-    prisma.kycProfile.count({ where: { status: "PENDING" } }),
+    prisma.kycProfile.count({ where: { status: { in: ["PENDING", "PENDING_REVIEW", "IN_REVIEW"] } } }),
     prisma.treasuryWallet.aggregate({ _sum: { balance: true } }),
     prisma.payoutOrder.count({ where: { status: "FAILED" } }),
     prisma.complianceCase.count({ where: { status: { in: ["OPEN", "INVESTIGATING"] } } }),
@@ -20,6 +20,9 @@ router.get("/dashboard", authenticate, requireRole("SUPER_ADMIN", "ADMIN", "COMP
     prisma.agent.count({ where: { type: "INTERNAL" } }),
     prisma.systemAlert.findMany({ where: { status: "OPEN" }, orderBy: { createdAt: "desc" }, take: 10 }),
     prisma.adminActionLog.findMany({ orderBy: { createdAt: "desc" }, take: 10 }),
+    prisma.user.count({ where: { kycTier: 1 } }),
+    prisma.user.count({ where: { kycTier: 2 } }),
+    prisma.user.count({ where: { kycTier: 3 } }),
   ]);
 
   res.json({
@@ -34,6 +37,7 @@ router.get("/dashboard", authenticate, requireRole("SUPER_ADMIN", "ADMIN", "COMP
     totalAgents: partnerAgents + internalAgents,
     partnerAgents,
     internalAgents,
+    kycTiers: { tier1: tier1Count, tier2: tier2Count, tier3: tier3Count },
     alerts: alerts.map((a: { id: string; severity: string; message: string | null; createdAt: Date }) => ({
       id: a.id,
       severity: a.severity as "CRITICAL" | "HIGH" | "MEDIUM" | "LOW",
@@ -106,17 +110,87 @@ router.post("/users/:id/toggle-status", authenticate, requireRole("SUPER_ADMIN")
 
 router.get("/kyc/pending", authenticate, requireRole("SUPER_ADMIN", "ADMIN", "COMPLIANCE"), async (_req: AuthRequest, res: Response) => {
   const pending = await prisma.kycProfile.findMany({
-    where: { status: "PENDING" },
-    include: { user: { select: { email: true, fullName: true } } },
+    where: { status: { in: ["PENDING", "PENDING_REVIEW", "IN_REVIEW"] } },
+    include: {
+      user: { select: { email: true, fullName: true, kycTier: true, kycStatus: true } },
+    },
     orderBy: { createdAt: "desc" },
   });
-  res.json(pending);
+
+  const userIds = pending.map((p: any) => p.userId);
+  const events = userIds.length > 0
+    ? await prisma.kycEvent.findMany({
+        where: { userId: { in: userIds } },
+        orderBy: { createdAt: "desc" },
+      })
+    : [];
+  const eventMap = new Map<string, any>();
+  for (const ev of events) {
+    if (!eventMap.has(ev.userId)) {
+      eventMap.set(ev.userId, ev);
+    }
+  }
+
+  res.json(pending.map((p: any) => {
+    const ev = eventMap.get(p.userId);
+    return {
+      id: p.id,
+      userId: p.userId,
+      email: p.user?.email || "",
+      name: p.user?.fullName || p.user?.email || "",
+      tier: p.tier,
+      status: p.status,
+      submittedAt: p.createdAt,
+      userKycTier: p.user?.kycTier ?? 0,
+      userKycStatus: p.user?.kycStatus ?? "none",
+      documents: [],
+      lastEvent: ev ? { type: ev.eventType, status: ev.status, payload: ev.rawPayload } : null,
+    };
+  }));
+});
+
+router.get("/kyc/:id", authenticate, requireRole("SUPER_ADMIN", "ADMIN", "COMPLIANCE"), async (req: AuthRequest, res: Response) => {
+  const profile = await prisma.kycProfile.findUnique({
+    where: { id: req.params.id },
+    include: {
+      user: { select: { email: true, fullName: true, kycTier: true, kycStatus: true, createdAt: true } },
+    },
+  });
+  if (!profile) return res.status(404).json({ error: "KYC profile not found" });
+
+  const events = await prisma.kycEvent.findMany({
+    where: { userId: profile.userId },
+    orderBy: { createdAt: "desc" },
+  });
+
+  res.json({ profile, events });
 });
 
 router.post("/kyc/:id/approve", authenticate, requireRole("SUPER_ADMIN", "ADMIN", "COMPLIANCE"), async (req: AuthRequest, res: Response) => {
-  const profile = await prisma.kycProfile.update({
+  const profile = await prisma.kycProfile.findUnique({
+    where: { id: req.params.id },
+    select: { userId: true, tier: true },
+  });
+  if (!profile) return res.status(404).json({ error: "KYC profile not found" });
+
+  await prisma.kycProfile.update({
     where: { id: req.params.id },
     data: { status: "APPROVED" },
+  });
+
+  await prisma.user.update({
+    where: { id: profile.userId },
+    data: { kycTier: profile.tier, kycStatus: "approved" },
+  });
+
+  await prisma.kycEvent.create({
+    data: {
+      userId: profile.userId,
+      eventType: "ADMIN_APPROVE",
+      status: "APPROVED",
+      provider: "manual",
+      rawPayload: { adminId: req.userId },
+    },
   });
 
   await prisma.adminActionLog.create({
@@ -128,13 +202,34 @@ router.post("/kyc/:id/approve", authenticate, requireRole("SUPER_ADMIN", "ADMIN"
     },
   });
 
-  res.json({ status: "APPROVED" });
+  res.json({ status: "APPROVED", tier: profile.tier });
 });
 
 router.post("/kyc/:id/reject", authenticate, requireRole("SUPER_ADMIN", "ADMIN", "COMPLIANCE"), async (req: AuthRequest, res: Response) => {
-  const profile = await prisma.kycProfile.update({
+  const profile = await prisma.kycProfile.findUnique({
+    where: { id: req.params.id },
+    select: { userId: true },
+  });
+  if (!profile) return res.status(404).json({ error: "KYC profile not found" });
+
+  await prisma.kycProfile.update({
     where: { id: req.params.id },
     data: { status: "REJECTED" },
+  });
+
+  await prisma.user.update({
+    where: { id: profile.userId },
+    data: { kycStatus: "rejected" },
+  });
+
+  await prisma.kycEvent.create({
+    data: {
+      userId: profile.userId,
+      eventType: "ADMIN_REJECT",
+      status: "REJECTED",
+      provider: "manual",
+      rawPayload: { adminId: req.userId, reason: req.body.reason },
+    },
   });
 
   await prisma.adminActionLog.create({

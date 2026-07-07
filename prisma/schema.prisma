@@ -16,11 +16,14 @@ model User {
   createdAt       DateTime         @default(now())
   updatedAt       DateTime         @updatedAt
   phoneVerified   Boolean          @default(false)
+  kycTier         Int              @default(0)
+  kycStatus       String           @default("none")
   amlChecks       AmlCheck[]
   beneficiaries   Beneficiary[]
   complianceCases ComplianceCase[]
   depositWallets  DepositWallet[]
   kycDocuments    KycDocument[]
+  kycEvents       KycEvent[]
   kycProfile      KycProfile?
   notifications   Notification[]
   otpCodes        OtpCode[]
@@ -284,17 +287,19 @@ model Withdrawal {
 }
 
 model KycProfile {
-  id          String   @id
-  userId      String   @unique
-  tier        Int      @default(1)
-  status      String   @default("PENDING")
-  fullName    String?
-  country     String?
-  dateOfBirth String?
-  address     String?
-  selfieUrl   String?
-  createdAt   DateTime @default(now())
-  user        User     @relation(fields: [userId], references: [id])
+  id                   String   @id
+  userId               String   @unique
+  tier                 Int      @default(1)
+  status               String   @default("PENDING")
+  fullName             String?
+  country              String?
+  dateOfBirth          String?
+  nationality          String?
+  address              String?
+  selfieUrl            String?
+  diditVerificationId  String?
+  createdAt            DateTime @default(now())
+  user                 User     @relation(fields: [userId], references: [id])
 }
 
 model KycDocument {
@@ -305,6 +310,17 @@ model KycDocument {
   status       String   @default("PENDING")
   createdAt    DateTime @default(now())
   user         User     @relation(fields: [userId], references: [id])
+}
+
+model KycEvent {
+  id         String   @id
+  userId     String
+  eventType  String
+  status     String
+  provider   String   @default("didit")
+  rawPayload Json?
+  createdAt  DateTime @default(now())
+  user       User     @relation(fields: [userId], references: [id])
 }
 
 model AmlCheck {

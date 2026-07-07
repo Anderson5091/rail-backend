@@ -20,6 +20,7 @@ export interface ExtendedPrismaClient extends PrismaClient {
   agentKpi: any;
   agentLedgerEntry: any;
   feeConfig: any;
+  kycEvent: any;
 }
 
 const xprisma = (prismaRaw as any).$extends({

@@ -39,3 +39,11 @@ export const webhookLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
 });
+
+export const kycLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  message: { error: "Too many KYC requests, please try again later" },
+  standardHeaders: true,
+  legacyHeaders: false,
+});

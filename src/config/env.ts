@@ -51,4 +51,8 @@ export const ENV = {
   WARM_THRESHOLD_MIN: parseFloat(process.env.WARM_THRESHOLD_MIN || "250000"),
   WARM_REFILL_AMOUNT: parseFloat(process.env.WARM_REFILL_AMOUNT || "1000000"),
   REFILL_INTERVAL: parseInt(process.env.REFILL_INTERVAL || "60000", 10),
+
+  // Didit Configuration
+  DIDIT_API_KEY: process.env.DIDIT_API_KEY || "",
+  DIDIT_API_BASE_URL: process.env.DIDIT_API_BASE_URL || "https://verification.didit.me/v3/",
 };
