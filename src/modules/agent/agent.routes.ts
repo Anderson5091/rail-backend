@@ -216,6 +216,31 @@ router.get("/:id", authenticate, requireRole("SUPER_ADMIN", "OPS", "TREASURY"), 
   res.json(dashboard);
 });
 
+router.post("/:id/delete", authenticate, requireRole("SUPER_ADMIN", "ADMIN"), async (req: AuthRequest, res: Response) => {
+  const id = String(req.params.id);
+  const agent = await prisma.agent.findUnique({ where: { id } });
+  if (!agent) return res.status(404).json({ error: "Agent not found" });
+  if (agent.status !== "SUSPENDED") return res.status(400).json({ error: "Agent must be suspended before deletion" });
+
+  await prisma.agentWallet.deleteMany({ where: { agentId: id } });
+  await prisma.agentLedgerEntry.deleteMany({ where: { agentId: id } });
+  await prisma.agentTransaction.deleteMany({ where: { agentId: id } });
+  await prisma.agentKpi.deleteMany({ where: { agentId: id } });
+  await prisma.agent.delete({ where: { id } });
+
+  await prisma.adminActionLog.create({
+    data: {
+      adminId: req.userId,
+      action: "DELETE_AGENT",
+      entity: "Agent",
+      entityId: id,
+      metadata: { type: agent.type, email: agent.email },
+    },
+  });
+
+  res.json({ success: true, message: "Agent deleted permanently" });
+});
+
 router.post("/:id/toggle-status", authenticate, requireRole("SUPER_ADMIN"), async (req: AuthRequest, res: Response) => {
   const id = String(req.params.id);
   const agent = await prisma.agent.findUnique({ where: { id } });
