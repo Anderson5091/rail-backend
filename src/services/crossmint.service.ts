@@ -37,24 +37,16 @@ class CrossmintService {
     }
   }
 
-  async createWallet(
+  async createTreasuryWallet(
     chain: ChainType,
-    type: WalletType = "DEPOSIT",
-    userId?: string,
+    type: "HOT" | "WARM" | "COLD" | "REVENUE",
     alias?: string
   ): Promise<CrossmintWalletResult> {
+    const owner = "COMPANY";
     await this.ensureInitialized();
 
-    const isDepositOrAgent = type === "DEPOSIT" || type === "AGENT";
-    const recoverySecret =
-      isDepositOrAgent
-        ? ENV.WALLET_RECOVERY_SECRET || ENV.DEPOSIT_SIGNER_SECRET
-        : ENV.TREASURY_RECOVERY_SECRET;
-
-    const signerSecret =
-      isDepositOrAgent
-        ? ENV.WALLET_SIGNER_SECRET || ENV.DEPOSIT_SIGNER_SECRET
-        : ENV.TREASURY_SIGNER_SECRET;
+    const recoverySecret = ENV.TREASURY_RECOVERY_SECRET;
+    const signerSecret = ENV.TREASURY_SIGNER_SECRET;
 
     try {
       const params: any = {
@@ -66,25 +58,25 @@ class CrossmintService {
         signers: [
           { type: "server", secret: signerSecret },
         ],
+        owner,
       };
 
-      if (userId) {
-        params.owner = `user:${userId}`;
-      }
       if (alias) {
         params.alias = alias;
       }
 
       const wallet = await this.walletsSdk.createWallet(params);
 
-      // The wallet.address is the blockchain address, which doubles as a valid wallet locator
-      // for the Crossmint SDK (WalletLocator accepts Address format).
-      // After creation, retrieve the wallet by address to get the full wallet object including locator.
-      const walletLocator = wallet.address;
-      const crossmintWalletId = wallet.address;
+      // Standard Crossmint locator format for COMPANY wallets:
+      // <chainType>:smart:alias:<alias> (if alias is provided)
+      const chainStr = String(chain).toLowerCase();
+      const chainType = chainStr.includes("solana") ? "solana" : "evm";
+      const walletLocator = alias 
+        ? `${chainType}:smart:alias:${alias}`
+        : wallet.address;
 
       return {
-        crossmintWalletId,
+        crossmintWalletId: wallet.address,
         walletLocator,
         address: wallet.address,
         chain: String(chain),
@@ -92,7 +84,56 @@ class CrossmintService {
         alias: wallet.alias,
       };
     } catch (error) {
-      logger.error(`[Crossmint] Failed to create ${type} wallet:`, error);
+      logger.error(`[Crossmint] Failed to create treasury ${type} wallet:`, error);
+      throw error;
+    }
+  }
+
+  async createUserWallet(
+    chain: ChainType,
+    type: "DEPOSIT" | "AGENT",
+    userId: string,
+    alias: string
+  ): Promise<CrossmintWalletResult> {
+    const owner = "USER";
+    await this.ensureInitialized();
+
+    const recoverySecret = ENV.WALLET_RECOVERY_SECRET || ENV.DEPOSIT_SIGNER_SECRET;
+    const signerSecret = ENV.WALLET_SIGNER_SECRET || ENV.DEPOSIT_SIGNER_SECRET;
+
+    try {
+      const params: any = {
+        chain,
+        recovery: {
+          type: "server",
+          secret: recoverySecret,
+        },
+        signers: [
+          { type: "server", secret: signerSecret },
+        ],
+        alias,
+        owner,
+      };
+
+      const wallet = await this.walletsSdk.createWallet(params);
+
+      // Map chain to Crossmint chainType format (evm, solana, etc.)
+      const chainStr = String(chain).toLowerCase();
+      const chainType = chainStr.includes("solana") ? "solana" : "evm";
+
+      // Build the standard Crossmint server-side wallet locator:
+      // userId:<userId>:<chainType>:smart:alias:<alias>
+      const walletLocator = `userId:${userId}:${chainType}:smart:alias:${alias}`;
+
+      return {
+        crossmintWalletId: wallet.address,
+        walletLocator,
+        address: wallet.address,
+        chain: String(chain),
+        alias: wallet.alias,
+      };
+    } catch (error) {
+      logger.error(`[Crossmint] Failed to create user ${type} wallet:`, error);
       throw error;
     }
   }

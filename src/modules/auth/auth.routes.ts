@@ -2,14 +2,10 @@ import { z } from "zod";
 import { Router, Request, Response } from "express";
 import bcrypt from "bcryptjs";
 import { prisma } from "../../config/database";
-import { ENV } from "../../config/env";
 import { generateToken, generateRefreshToken } from "../../utils/token";
 import { AppError } from "../../middleware/errorHandler";
 import { authenticate, AuthRequest } from "../../middleware/auth";
-import { crossmintService, type ChainType } from "../../services/crossmint.service";
-import { ledgerService } from "../ledger/ledger.service";
 import { otpService } from "./otp.service";
-import { logger } from "../../utils/logger";
 
 const router = Router();
 
@@ -25,42 +21,6 @@ const loginSchema = z.object({
   password: z.string(),
 });
 
-async function createUserDepositWallets(userId: string) {
-  const evmChain = ENV.NETWORK_CHAIN[ENV.SUPPORTED_NETWORKS.indexOf("BASE")] as ChainType;
-  const solanaChain = ENV.NETWORK_CHAIN[ENV.SUPPORTED_NETWORKS.indexOf("SOLANA")] as ChainType;
-
-  const walletConfigs = [
-    { alias: "evm", chain: evmChain || ("base-sepolia" as ChainType) },
-    { alias: "solana", chain: solanaChain || ("solana" as ChainType) },
-  ];
-
-  for (const cfg of walletConfigs) {
-    try {
-      const existing = await prisma.depositWallet.findUnique({
-        where: { userId_alias: { userId, alias: cfg.alias } },
-      });
-      if (existing) continue;
-
-      const wallet = await crossmintService.createWallet(cfg.chain, "DEPOSIT", userId, cfg.alias);
-
-      await prisma.depositWallet.create({
-        data: {
-          userId,
-          alias: cfg.alias,
-          crossmintWalletId: wallet.crossmintWalletId,
-          walletLocator: wallet.walletLocator,
-          address: wallet.address,
-          chain: cfg.chain,
-        },
-      });
-
-      logger.info(`[Auth] Created ${cfg.alias} wallet for user ${userId}: ${wallet.address}`);
-    } catch (error) {
-      logger.warn(`[Auth] Failed to create ${cfg.alias} wallet for user ${userId}:`, error);
-    }
-  }
-}
-
 router.post("/register", async (req: Request, res: Response) => {
   const data = registerSchema.parse(req.body);
 
@@ -73,23 +33,6 @@ router.post("/register", async (req: Request, res: Response) => {
     data: { email: data.email, phone: data.phone, fullName: data.fullName, password },
   });
 
-  const wallet = await prisma.wallet.create({
-    data: { userId: user.id },
-  });
-
-  await ledgerService.credit(wallet.id, 200, `welcome_bonus_${user.id}`);
-
-  await prisma.walletTransaction.create({
-    data: {
-      walletId: wallet.id,
-      type: "DEPOSIT",
-      amount: 200,
-      status: "COMPLETED",
-    },
-  });
-
-  await createUserDepositWallets(user.id);
-
   await otpService.sendOtp(user.id, user.phone || "", user.email);
 
   const maskPhone = (p: string) => p.length > 4 ? p.slice(0, 3) + "****" + p.slice(-2) : p;
@@ -100,6 +43,14 @@ router.post("/register", async (req: Request, res: Response) => {
     phone: user.phone ? maskPhone(user.phone) : null,
     message: "Account created. Please verify your phone number.",
   });
+});
+
+router.get("/check-email", async (req: Request, res: Response) => {
+  const { email } = req.query;
+  if (!email || typeof email !== "string") throw new AppError(400, "Email query parameter required");
+
+  const existing = await prisma.user.findUnique({ where: { email: email.toLowerCase().trim() } });
+  res.json({ available: !existing });
 });
 
 router.post("/send-otp", async (req: Request, res: Response) => {

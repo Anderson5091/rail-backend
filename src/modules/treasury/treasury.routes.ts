@@ -4,6 +4,7 @@ import { authenticate, AuthRequest, requireRole } from "../../middleware/auth";
 import { TreasuryOrchestrator } from "./treasury.orchestrator";
 import { treasuryRefillService } from "./treasury-refill.service";
 import { crossmintService } from "../../services/crossmint.service";
+import { extractBalance } from "../../utils/balance";
 import type { Chain } from "@crossmint/wallets-sdk";
 
 const router = Router();
@@ -121,36 +122,5 @@ router.get("/crossmint-balances", authenticate, requireRole("SUPER_ADMIN", "TREA
 
   res.json(balances);
 });
-
-function extractBalance(balances: unknown, token: string): number {
-  if (typeof balances !== "object" || balances === null) return 0;
-  // Check the tokens array for the requested token
-  const tokensArray = (balances as Record<string, unknown>).tokens;
-  if (Array.isArray(tokensArray)) {
-    const match = tokensArray.find(
-      (t: Record<string, unknown>) =>
-        String(t.symbol || "").toLowerCase() === token.toLowerCase()
-    );
-    if (match) return Number(match.amount) || 0;
-  }
-  // Fall back to named property (e.g. balances.usdc / balances.usdxm / balances.nativeToken)
-  const entry = (balances as Record<string, unknown>)[token];
-  if (!entry) {
-    if (token === "native") {
-      const native = (balances as Record<string, unknown>).nativeToken;
-      if (native && typeof native === "object") {
-        return Number((native as Record<string, unknown>).amount) || 0;
-      }
-    }
-    return 0;
-  }
-  if (typeof entry === "number") return entry;
-  if (typeof entry === "string") return Number(entry) || 0;
-  if (typeof entry === "object" && entry !== null) {
-    const amt = (entry as Record<string, unknown>).amount;
-    return Number(amt) || 0;
-  }
-  return 0;
-}
 
 export { router as treasuryRoutes };

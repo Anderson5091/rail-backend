@@ -449,6 +449,8 @@ export class AgentService {
       (w) => w.walletType === "MAIN"
     );
 
+    const totalWalletBalance = walletsWithLiveBalance.reduce((sum, w) => sum + w.balance, 0);
+
     return {
       id: agent.id,
       email: agent.email,
@@ -458,7 +460,8 @@ export class AgentService {
       kpiRating: agent.kpiRating,
       totalRewards: Number(agent.totalRewards),
       ledgerBalance,
-      walletBalance: mainWallet?.balance ?? null,
+      walletBalance: totalWalletBalance,
+      walletBalances: walletsWithLiveBalance.map((w) => ({ walletType: w.walletType, balance: w.balance })),
       todayVolume: todayTx.reduce((sum: number, t: AgentTransactionRow) => sum + Number(t.amount), 0),
       todayCommission: todayTx.reduce((sum: number, t: AgentTransactionRow) => sum + Number(t.commission), 0),
       todayTxCount: todayTx.length,
@@ -564,25 +567,35 @@ export class AgentService {
     return user;
   }
 
-  async swapFunds(agentId: string, amount: number, direction: "TO_LEDGER" | "TO_WALLET"): Promise<{ swappedAmount: number; walletBalance: number; ledgerBalance: number }> {
+  private async getWalletForSwap(agentId: string, walletType: string) {
+    const wallet = await prisma.agentWallet.findFirst({
+      where: { agentId, walletType },
+    });
+    if (!wallet) throw new Error(`Agent ${walletType} wallet not found`);
+    return wallet;
+  }
+
+  private async getHotTreasury(chain: string) {
+    const hotWallet = await prisma.treasuryWallet.findFirst({
+      where: { walletType: "HOT", chain },
+    });
+    if (!hotWallet) throw new Error("Hot treasury wallet not configured for this chain");
+    return hotWallet;
+  }
+
+  async swapFunds(agentId: string, amount: number, direction: "TO_LEDGER" | "TO_WALLET", walletType: string = "MAIN"): Promise<{ swappedAmount: number; walletBalance: number; ledgerBalance: number }> {
     if (amount <= 0) throw new Error("Amount must be greater than 0");
 
-    if (direction === "TO_LEDGER") {
-      const wallet = await prisma.agentWallet.findFirst({
-        where: { agentId, walletType: "MAIN" },
-      });
-      if (!wallet) throw new Error("Agent MAIN wallet not found");
-      if (!wallet.walletLocator) throw new Error("Agent wallet locator not found");
+    const wallet = await this.getWalletForSwap(agentId, walletType);
+    if (!wallet.walletLocator) throw new Error("Agent wallet locator not found");
 
+    const chainType = wallet.chain as ChainType;
+    const hotWallet = await this.getHotTreasury(wallet.chain);
+
+    if (direction === "TO_LEDGER") {
       const available = Number(wallet.balance);
       if (available < amount) throw new Error("Insufficient wallet balance");
 
-      const hotWallet = await prisma.treasuryWallet.findFirst({
-        where: { walletType: "HOT", chain: wallet.chain },
-      });
-      if (!hotWallet?.address) throw new Error("Hot treasury wallet not configured for this chain");
-
-      const chainType = wallet.chain as ChainType;
       let txResult;
       try {
         txResult = await crossmintService.sendTransfer(
@@ -593,7 +606,7 @@ export class AgentService {
           chainType
         );
       } catch (error) {
-        logger.error(`[Agent] Crossmint transfer failed for TO_LEDGER swap (agent ${agentId}):`, error);
+        logger.error(`[Agent] Crossmint transfer failed for TO_LEDGER swap (agent ${agentId}, wallet ${walletType}):`, error);
         throw new Error("Crossmint transfer failed. Please try again.");
       }
 
@@ -613,24 +626,15 @@ export class AgentService {
           netAmount: amount,
           status: "COMPLETED",
           reference: generateReferenceNumber(),
-          metadata: { direction: "TO_LEDGER", walletId: wallet.id, txHash: txResult.txHash, explorerLink: txResult.explorerLink },
+          metadata: { direction: "TO_LEDGER", walletId: wallet.id, walletType, txHash: txResult.txHash, explorerLink: txResult.explorerLink },
         },
       });
     } else {
       const ledgerBalance = await agentLedgerService.getBalance(agentId);
       if (ledgerBalance < amount) throw new Error("Insufficient ledger balance");
 
-      const wallet = await prisma.agentWallet.findFirst({
-        where: { agentId, walletType: "MAIN" },
-      });
-      if (!wallet) throw new Error("Agent MAIN wallet not found");
+      if (!hotWallet.walletLocator) throw new Error("Hot treasury wallet locator not configured for this chain");
 
-      const hotWallet = await prisma.treasuryWallet.findFirst({
-        where: { walletType: "HOT", chain: wallet.chain },
-      });
-      if (!hotWallet?.walletLocator) throw new Error("Hot treasury wallet not configured for this chain");
-
-      const chainType = wallet.chain as ChainType;
       let txResult;
       try {
         txResult = await crossmintService.sendTransfer(
@@ -641,7 +645,7 @@ export class AgentService {
           chainType
         );
       } catch (error) {
-        logger.error(`[Agent] Crossmint transfer failed for TO_WALLET swap (agent ${agentId}):`, error);
+        logger.error(`[Agent] Crossmint transfer failed for TO_WALLET swap (agent ${agentId}, wallet ${walletType}):`, error);
         throw new Error("Crossmint transfer failed. Please try again.");
       }
 
@@ -661,35 +665,30 @@ export class AgentService {
           netAmount: amount,
           status: "COMPLETED",
           reference: generateReferenceNumber(),
-          metadata: { direction: "TO_WALLET", walletId: wallet.id, txHash: txResult.txHash, explorerLink: txResult.explorerLink },
+          metadata: { direction: "TO_WALLET", walletId: wallet.id, walletType, txHash: txResult.txHash, explorerLink: txResult.explorerLink },
         },
       });
     }
 
     const newLedgerBalance = await agentLedgerService.getBalance(agentId);
-    const wallet = await prisma.agentWallet.findFirst({
-      where: { agentId, walletType: "MAIN" },
+    const updatedWallet = await prisma.agentWallet.findFirst({
+      where: { agentId, walletType },
     });
 
-    return { swappedAmount: amount, walletBalance: wallet ? Number(wallet.balance) : 0, ledgerBalance: newLedgerBalance };
+    return { swappedAmount: amount, walletBalance: updatedWallet ? Number(updatedWallet.balance) : 0, ledgerBalance: newLedgerBalance };
   }
 
-  async walletWithdraw(agentId: string, amount: number): Promise<void> {
+  async walletWithdraw(agentId: string, amount: number, walletType: string = "MAIN"): Promise<void> {
     if (amount <= 0) throw new Error("Amount must be greater than 0");
 
-    const wallet = await prisma.agentWallet.findFirst({
-      where: { agentId, walletType: "MAIN" },
-    });
-    if (!wallet) throw new Error("Agent MAIN wallet not found");
+    const wallet = await this.getWalletForSwap(agentId, walletType);
     if (!wallet.walletLocator) throw new Error("Agent wallet locator not found");
 
     const available = Number(wallet.balance);
     if (available < amount) throw new Error("Insufficient wallet balance");
 
-    const hotWallet = await prisma.treasuryWallet.findFirst({
-      where: { walletType: "HOT", chain: wallet.chain },
-    });
-    if (!hotWallet?.address) throw new Error("Hot treasury wallet not configured for this chain");
+    const hotWallet = await this.getHotTreasury(wallet.chain);
+    if (!hotWallet.address) throw new Error("Hot treasury address not configured for this chain");
 
     const chainType = wallet.chain as ChainType;
     try {
@@ -715,13 +714,13 @@ export class AgentService {
           netAmount: amount,
           status: "COMPLETED",
           reference: generateReferenceNumber(),
-          metadata: { direction: "TO_TREASURY", walletId: wallet.id, txHash: result.txHash, explorerLink: result.explorerLink },
+          metadata: { direction: "TO_TREASURY", walletId: wallet.id, walletType, txHash: result.txHash, explorerLink: result.explorerLink },
         },
       });
 
-      logger.info(`[Agent] Wallet withdraw ${amount} USDT from agent ${agentId} to hot treasury: tx=${result.txHash}`);
+      logger.info(`[Agent] Wallet withdraw ${amount} USDT from agent ${agentId} ${walletType} wallet to hot treasury: tx=${result.txHash}`);
     } catch (error) {
-      logger.error(`[Agent] Crossmint wallet withdraw failed for agent ${agentId}:`, error);
+      logger.error(`[Agent] Crossmint wallet withdraw failed for agent ${agentId} ${walletType} wallet:`, error);
       throw new Error("Wallet withdrawal failed. Please try again.");
     }
   }

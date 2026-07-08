@@ -1,6 +1,7 @@
 import { prisma } from "../../config/database";
 import { ENV } from "../../config/env";
 import { crossmintService } from "../../services/crossmint.service";
+import { extractBalance } from "../../utils/balance";
 import { logger } from "../../utils/logger";
 
 export class TreasuryOrchestrator {
@@ -26,7 +27,7 @@ export class TreasuryOrchestrator {
       ["usdt"]
     );
 
-    const hotBalance = extractNumericBalance(hotBalances);
+    const hotBalance = extractBalance(hotBalances, "usdt");
     const thresholdMin = Number(hot.thresholdMin || ENV.HOT_THRESHOLD_MIN);
 
     if (hotBalance < thresholdMin) {
@@ -63,19 +64,4 @@ export class TreasuryOrchestrator {
 
     return { success: true, message: `Rebalancing complete for ${network}` };
   }
-}
-
-function extractNumericBalance(balances: unknown): number {
-  if (typeof balances === "object" && balances !== null) {
-    if (Array.isArray(balances)) {
-      const entry = balances.find(
-        (b: Record<string, unknown>) =>
-          String(b.token || "").toLowerCase() === "usdt" ||
-          String(b.symbol || "").toLowerCase() === "usdt"
-      );
-      return entry ? Number(entry.amount || entry.balance || 0) : 0;
-    }
-    return Number((balances as Record<string, unknown>)["usdt"] || 0);
-  }
-  return 0;
 }

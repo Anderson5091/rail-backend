@@ -1,6 +1,7 @@
 import { prisma } from "../../config/database";
 import { ENV } from "../../config/env";
 import { crossmintService } from "../../services/crossmint.service";
+import { extractBalance } from "../../utils/balance";
 import { logger } from "../../utils/logger";
 
 export class TreasuryRefillService {
@@ -59,7 +60,7 @@ export class TreasuryRefillService {
         ["usdt"]
       );
 
-      const hotUsdtBalance = this.extractBalance(hotBalances, "usdt");
+      const hotUsdtBalance = extractBalance(hotBalances, "usdt");
       const thresholdMin = Number(hotWallet.thresholdMin || ENV.HOT_THRESHOLD_MIN);
 
       if (hotUsdtBalance < thresholdMin) {
@@ -109,7 +110,7 @@ export class TreasuryRefillService {
       }
 
       const warmUsdtBalance = warmWallet?.walletLocator
-        ? this.extractBalance(await crossmintService.getWalletBalance(warmWallet.walletLocator, ["usdt"]), "usdt")
+        ? extractBalance(await crossmintService.getWalletBalance(warmWallet.walletLocator, ["usdt"]), "usdt")
         : 0;
 
       const warmThresholdMin = Number(warmWallet?.thresholdMin || ENV.WARM_THRESHOLD_MIN);
@@ -151,18 +152,6 @@ export class TreasuryRefillService {
     logger.info("[TreasuryRefill] Liquidity snapshot recorded");
   }
 
-  private extractBalance(balances: any, token: string): number {
-    if (typeof balances === "object" && balances !== null) {
-      if (Array.isArray(balances)) {
-        const entry = balances.find((b: any) =>
-          b.token?.toLowerCase() === token || b.symbol?.toLowerCase() === token
-        );
-        return entry ? Number(entry.amount || entry.balance || 0) : 0;
-      }
-      return Number(balances[token] || balances.balance || 0);
-    }
-    return 0;
-  }
 }
 
 export const treasuryRefillService = new TreasuryRefillService();

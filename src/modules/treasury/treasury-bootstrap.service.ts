@@ -40,7 +40,8 @@ export class TreasuryBootstrapService {
         }
 
         try {
-          const created = await crossmintService.createWallet(config.chain, config.walletType);
+          const alias = `treasury_${config.walletType.toLowerCase()}_${config.chain.toLowerCase()}`;
+          const created = await crossmintService.createTreasuryWallet(config.chain, config.walletType as any, alias);
 
           await prisma.treasuryWallet.create({
             data: {
@@ -78,7 +79,8 @@ export class TreasuryBootstrapService {
     }
 
     try {
-      const created = await crossmintService.createWallet(REVENUE_CHAIN, "REVENUE");
+      const alias = `treasury_revenue_${REVENUE_CHAIN.toLowerCase()}`;
+      const created = await crossmintService.createTreasuryWallet(REVENUE_CHAIN, "REVENUE", alias);
 
       await prisma.treasuryWallet.create({
         data: {

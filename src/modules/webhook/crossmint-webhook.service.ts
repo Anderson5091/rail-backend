@@ -1,4 +1,6 @@
+import crypto from "crypto";
 import { Request, Response } from "express";
+import { ENV } from "../../config/env";
 import { depositService } from "../deposit/deposit.service";
 import { logger } from "../../utils/logger";
 
@@ -21,8 +23,12 @@ interface CrossmintWebhookPayload {
 
 export class CrossmintWebhookService {
   async handleWebhook(req: Request, res: Response) {
-    const signature = req.headers["x-crossmint-signature"] as string;
+    const signature = req.headers["x-crossmint-signature"] as string | undefined;
     const payload = req.body as CrossmintWebhookPayload;
+
+    if (!this.verifySignature(req, signature)) {
+      return;
+    }
 
     logger.info(`[CrossmintWebhook] Received event: ${payload.type}`);
 
@@ -50,6 +56,39 @@ export class CrossmintWebhookService {
       logger.error(`[CrossmintWebhook] Error processing ${payload.type}:`, error);
       res.status(500).json({ error: "Webhook processing failed" });
     }
+  }
+
+  private verifySignature(req: Request, signature: string | undefined): boolean {
+    const secret = ENV.CROSSMINT_WEBHOOK_SECRET;
+    if (!secret) {
+      if (signature) {
+        logger.warn("[CrossmintWebhook] Signature present but CROSSMINT_WEBHOOK_SECRET not configured — skipping validation");
+      }
+      return true;
+    }
+
+    if (!signature) {
+      logger.warn("[CrossmintWebhook] Missing x-crossmint-signature header");
+      return true;
+    }
+
+    const rawBody = (req as any).rawBody;
+    if (!rawBody) {
+      logger.warn("[CrossmintWebhook] Raw body not available for signature verification");
+      return true;
+    }
+
+    const expected = crypto
+      .createHmac("sha256", secret)
+      .update(rawBody)
+      .digest("hex");
+
+    if (!crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected))) {
+      logger.error("[CrossmintWebhook] Invalid webhook signature — possible spoofed event");
+      return false;
+    }
+
+    return true;
   }
 
   private async handleDepositDetected(payload: CrossmintWebhookPayload) {

@@ -29,7 +29,7 @@ export class DepositService {
 
     if (!depositWallet) {
       try {
-        const wallet = await crossmintService.createWallet(
+        const wallet = await crossmintService.createUserWallet(
           mapping.chain,
           "DEPOSIT",
           userId,
