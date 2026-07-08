@@ -576,9 +576,15 @@ export class AgentService {
   }
 
   private async getHotTreasury(chain: string) {
-    const hotWallet = await prisma.treasuryWallet.findFirst({
+    let hotWallet = await prisma.treasuryWallet.findFirst({
       where: { walletType: "HOT", chain },
     });
+    if (!hotWallet) {
+      hotWallet = await prisma.treasuryWallet.findFirst({
+        where: { walletType: "HOT" },
+        orderBy: { createdAt: "asc" },
+      });
+    }
     if (!hotWallet) throw new Error("Hot treasury wallet not configured for this chain");
     return hotWallet;
   }
