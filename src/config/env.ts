@@ -43,6 +43,9 @@ export const ENV = {
   // Crossmint chain identifiers (index-matched with SUPPORTED_NETWORKS)
   NETWORK_CHAIN: (process.env.NETWORK_CHAIN || "base-sepolia,ethereum-sepolia,solana,polygon-amoy").split(","),
 
+  // Treasury Onramp / Offramp
+  CROSSMINT_OFFRAMP_PAYMENT_METHOD_ID: process.env.CROSSMINT_OFFRAMP_PAYMENT_METHOD_ID || "",
+
   // Treasury Defaults
   TREASURY_CHAIN: process.env.TREASURY_CHAIN || "base",
   HOT_TARGET: parseFloat(process.env.HOT_TARGET || "50000"),

@@ -204,8 +204,10 @@ model TreasuryWallet {
   status            String             @default("ACTIVE")
   lastSync          DateTime           @default(now())
   createdAt         DateTime           @default(now())
-  movementsFrom     TreasuryMovement[] @relation("FromWallet")
-  movementsTo       TreasuryMovement[] @relation("ToWallet")
+  movementsFrom     TreasuryMovement[]      @relation("FromWallet")
+  movementsTo       TreasuryMovement[]      @relation("ToWallet")
+  offrampOrders     TreasuryOfframpOrder[]
+  onrampTransfers   TreasuryOnrampTransfer[]
 }
 
 model TreasuryMovement {
@@ -284,6 +286,60 @@ model Withdrawal {
   status             String   @default("PENDING")
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
+}
+
+model TreasuryBankAccount {
+  id              String   @id
+  bankName        String?
+  accountSuffix   String?
+  routingNumber   String?
+  currency        String   @default("USD")
+  paymentMethodId String   @unique
+  isDefault       Boolean  @default(false)
+  status          String   @default("ACTIVE")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model TreasuryOfframpOrder {
+  id               String          @id
+  paymentMethodId  String
+  chain            String
+  token            String          @default("USDC")
+  amount           Decimal         @db.Decimal(24, 8)
+  fee              Decimal?        @db.Decimal(24, 8)
+  netAmount        Decimal         @db.Decimal(24, 8)
+  fiatAmount       Decimal         @db.Decimal(24, 8)
+  fiatCurrency     String          @default("USD")
+  status           String          @default("PENDING")
+  crossmintOrderId String?
+  treasuryWalletId String?
+  fromWalletType   String?
+  txHash           String?
+  explorerLink     String?
+  failureReason    String?
+  createdBy        String?
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+  treasuryWallet   TreasuryWallet? @relation(fields: [treasuryWalletId], references: [id])
+}
+
+model TreasuryOnrampTransfer {
+  id               String          @id
+  fiatAmount       Decimal         @db.Decimal(24, 8)
+  fiatCurrency     String          @default("USD")
+  token            String          @default("USDC")
+  chain            String
+  amount           Decimal?        @db.Decimal(24, 8)
+  status           String          @default("PENDING")
+  crossmintOrderId String?
+  treasuryWalletId String?
+  txHash           String?
+  memoCode         String?
+  notes            String?
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+  treasuryWallet   TreasuryWallet? @relation(fields: [treasuryWalletId], references: [id])
 }
 
 model KycProfile {

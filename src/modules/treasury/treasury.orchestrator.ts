@@ -37,9 +37,9 @@ export class TreasuryOrchestrator {
       );
 
       const chainType = chain as "base" | "base-sepolia" | "ethereum" | "ethereum-sepolia" | "polygon" | "polygon-amoy" | "solana";
-      const result = await crossmintService.sendTransfer(
+      const result = await crossmintService.internalTransfer(
         warm.walletLocator,
-        hot.address,
+        hot.walletLocator!,
         "usdt",
         refillAmount.toString(),
         chainType

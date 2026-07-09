@@ -79,9 +79,9 @@ export class TreasuryRefillService {
         );
 
         const chainType = chain as "base" | "base-sepolia" | "ethereum" | "ethereum-sepolia" | "polygon" | "polygon-amoy" | "solana";
-        const result = await crossmintService.sendTransfer(
+        const result = await crossmintService.internalTransfer(
           warmWallet.walletLocator,
-          hotWallet.address,
+          hotWallet.walletLocator!,
           "usdt",
           refillAmount.toString(),
           chainType
