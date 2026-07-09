@@ -768,4 +768,109 @@ router.post("/lookup-user", authenticate, requireRole("AGENT_PARTNER", "AGENT_IN
   }
 });
 
+// --- Cash Request & Settlement Routes ---
+
+router.post("/:id/request-cash", authenticate, requireRole("AGENT_INTERNAL", "AGENT_PARTNER", "SUPER_ADMIN"), async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { amount, notes } = req.body;
+    if (!amount || amount <= 0) {
+      res.status(400).json({ error: "Valid amount is required" });
+      return;
+    }
+    const agent = await prisma.agent.findUnique({ where: { id } });
+    if (!agent) { res.status(404).json({ error: "Agent not found" }); return; }
+
+    const cashRequest = await prisma.agentCashRequest.create({
+      data: { agentId: id, amount, notes, status: "PENDING" },
+    });
+
+    await prisma.agentTransaction.create({
+      data: {
+        agentId: id,
+        type: "CASH_REQUEST",
+        amount,
+        netAmount: amount,
+        status: "PENDING",
+        reference: `CR-${cashRequest.id.slice(-8)}`,
+        metadata: { cashRequestId: cashRequest.id },
+      },
+    });
+
+    res.status(201).json(cashRequest);
+  } catch (error: any) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+router.get("/:id/cash-requests", authenticate, requireRole("AGENT_INTERNAL", "AGENT_PARTNER", "SUPER_ADMIN", "ADMIN", "OPS"), async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const requests = await prisma.agentCashRequest.findMany({
+      where: { agentId: id },
+      orderBy: { createdAt: "desc" },
+      take: 50,
+    });
+    res.json(requests);
+  } catch (error: any) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+router.post("/:id/submit-settlement", authenticate, requireRole("AGENT_INTERNAL", "AGENT_PARTNER", "SUPER_ADMIN"), async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { amount, bankName, referenceNumber, cashRequestId, notes } = req.body;
+    if (!amount || !bankName || !referenceNumber) {
+      res.status(400).json({ error: "amount, bankName, and referenceNumber are required" });
+      return;
+    }
+    const agent = await prisma.agent.findUnique({ where: { id } });
+    if (!agent) { res.status(404).json({ error: "Agent not found" }); return; }
+
+    const settlement = await prisma.agentSettlement.create({
+      data: {
+        agentId: id,
+        amount,
+        bankName,
+        referenceNumber,
+        cashRequestId: cashRequestId || null,
+        notes,
+        status: "PENDING",
+      },
+    });
+
+    await prisma.agentTransaction.create({
+      data: {
+        agentId: id,
+        type: "SETTLEMENT",
+        amount,
+        netAmount: amount,
+        status: "PENDING",
+        reference: `ST-${settlement.id.slice(-8)}`,
+        metadata: { settlementId: settlement.id, bankName, referenceNumber },
+      },
+    });
+
+    res.status(201).json(settlement);
+  } catch (error: any) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+router.get("/:id/settlements", authenticate, requireRole("AGENT_INTERNAL", "AGENT_PARTNER", "SUPER_ADMIN", "ADMIN", "OPS"), async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const settlements = await prisma.agentSettlement.findMany({
+      where: { agentId: id },
+      orderBy: { createdAt: "desc" },
+      take: 50,
+      include: { cashRequest: true },
+    });
+    res.json(settlements);
+  } catch (error: any) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
 export { router as agentRoutes };

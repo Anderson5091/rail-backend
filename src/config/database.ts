@@ -24,6 +24,8 @@ export interface ExtendedPrismaClient extends PrismaClient {
   treasuryBankAccount: any;
   treasuryOfframpOrder: any;
   treasuryOnrampTransfer: any;
+  agentCashRequest: any;
+  agentSettlement: any;
 }
 
 const xprisma = (prismaRaw as any).$extends({

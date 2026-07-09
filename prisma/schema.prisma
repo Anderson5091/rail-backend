@@ -547,6 +547,8 @@ model Agent {
   transactions     AgentTransaction[]
   wallets          AgentWallet[]
   ledgerEntries    AgentLedgerEntry[]
+  cashRequests     AgentCashRequest[]
+  settlements      AgentSettlement[]
 }
 
 model AgentLedgerEntry {
@@ -609,6 +611,34 @@ model AgentKpi {
   agent           Agent    @relation(fields: [agentId], references: [id])
 
   @@unique([agentId, period, periodStart])
+}
+
+model AgentCashRequest {
+  id        String   @id
+  agentId   String
+  amount    Decimal  @db.Decimal(24, 8)
+  status    String   @default("PENDING")
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  agent     Agent    @relation(fields: [agentId], references: [id])
+  settlement AgentSettlement?
+}
+
+model AgentSettlement {
+  id              String   @id
+  agentId         String
+  cashRequestId   String?  @unique
+  amount          Decimal  @db.Decimal(24, 8)
+  bankName        String
+  referenceNumber String
+  proofImage      String?
+  status          String   @default("PENDING")
+  notes           String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  agent           Agent    @relation(fields: [agentId], references: [id])
+  cashRequest     AgentCashRequest? @relation(fields: [cashRequestId], references: [id])
 }
 
 model AdminActionLog {
