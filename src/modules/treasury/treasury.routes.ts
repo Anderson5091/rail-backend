@@ -11,63 +11,66 @@ const router = Router();
 const orchestrator = new TreasuryOrchestrator();
 
 router.get("/overview", authenticate, async (_req: AuthRequest, res: Response) => {
-  const wallets = await prisma.treasuryWallet.findMany();
-  const movements = await prisma.treasuryMovement.findMany({
-    orderBy: { createdAt: "desc" },
-    take: 10,
-  });
-  const snapshots = await prisma.liquiditySnapshot.findMany({
-    orderBy: { createdAt: "desc" },
-    take: 7,
-  });
+  try {
+    const wallets = await prisma.treasuryWallet.findMany();
+    const movements = await prisma.treasuryMovement.findMany({
+      orderBy: { createdAt: "desc" },
+      take: 10,
+    });
+    const snapshots = await prisma.liquiditySnapshot.findMany({
+      orderBy: { createdAt: "desc" },
+      take: 7,
+    });
 
-  const results = await Promise.allSettled(
-    wallets.map(async (wallet: { id: string; walletLocator: string | null; address: string; chain: string; walletType: string; network: string }) => {
-      const locator = wallet.walletLocator || wallet.address;
-      if (!locator) return { key: `${wallet.walletType}_${wallet.network}`, balance: 0 };
+    const results = await Promise.allSettled(
+      wallets.map(async (wallet: { id: string; walletLocator: string | null; address: string; chain: string; walletType: string; network: string; balance: any }) => {
+        const locator = wallet.walletLocator || wallet.address;
+        if (!locator) return { key: `${wallet.walletType}_${wallet.network}`, balance: 0 };
 
-      const chain = wallet.chain as Chain;
-      try {
-        const balances = await crossmintService.getWalletBalance(locator, ["usdc", "usdt", "usdxm"], chain);
-        const bal = extractBalance(balances, "usdc") || extractBalance(balances, "usdt") || extractBalance(balances, "usdxm") || 0;
+        const chain = wallet.chain as Chain;
+        try {
+          const balances = await crossmintService.getWalletBalance(locator, ["usdc", "usdt", "usdxm"], chain);
+          const bal = extractBalance(balances, "usdc") || extractBalance(balances, "usdt") || extractBalance(balances, "usdxm") || 0;
 
-        if (bal > 0) {
-          await prisma.treasuryWallet.update({ where: { id: wallet.id }, data: { balance: bal, lastSync: new Date() } });
+          if (bal > 0) {
+            await prisma.treasuryWallet.update({ where: { id: wallet.id }, data: { balance: bal, lastSync: new Date() } });
+          }
+
+          return { key: `${wallet.walletType}_${wallet.network}`, balance: bal };
+        } catch {
+          return { key: `${wallet.walletType}_${wallet.network}`, balance: Number(wallet.balance) || 0 };
         }
+      })
+    );
 
-        return { key: `${wallet.walletType}_${wallet.network}`, balance: bal };
-      } catch {
-        return { key: `${wallet.walletType}_${wallet.network}`, balance: Number((wallet as any).balance) || 0 };
+    const onChainBalances: Record<string, number> = {};
+    for (const result of results) {
+      if (result.status === "fulfilled") {
+        onChainBalances[result.value.key] = result.value.balance;
       }
-    })
-  );
-
-  const onChainBalances: Record<string, number> = {};
-  for (const result of results) {
-    if (result.status === "fulfilled") {
-      onChainBalances[result.value.key] = result.value.balance;
     }
+
+    const walletsWithBalance = wallets.map((w: { walletType: string; network: string; balance: any }) => ({
+      ...w,
+      balance: onChainBalances[`${w.walletType}_${w.network}`] ?? Number(w.balance),
+    }));
+
+    const totalLiquidity = walletsWithBalance.reduce((sum: number, w: { balance: number }) => sum + w.balance, 0);
+    const hotTotal = walletsWithBalance
+      .filter((w: { walletType: string }) => w.walletType === "HOT")
+      .reduce((sum: number, w: { balance: number }) => sum + w.balance, 0);
+    const warmTotal = walletsWithBalance
+      .filter((w: { walletType: string }) => w.walletType === "WARM")
+      .reduce((sum: number, w: { balance: number }) => sum + w.balance, 0);
+    const coldTotal = walletsWithBalance
+      .filter((w: { walletType: string }) => w.walletType === "COLD")
+      .reduce((sum: number, w: { balance: number }) => sum + w.balance, 0);
+    const networks = [...new Set(wallets.map((w: { network: string }) => w.network))];
+
+    res.json({ totalLiquidity, hotTotal, warmTotal, coldTotal, networks, wallets: walletsWithBalance, recentMovements: movements, snapshots });
+  } catch (error: any) {
+    res.status(500).json({ error: `Failed to load treasury data: ${error.message}` });
   }
-
-  const walletsWithBalance = wallets.map((w: { walletType: string; network: string; balance: { toString: () => string } }) => ({
-    ...w,
-    balance: onChainBalances[`${w.walletType}_${w.network}`] ?? Number(w.balance),
-  }));
-
-  const totalLiquidity = walletsWithBalance.reduce((sum: number, w: { balance: number }) => sum + w.balance, 0);
-  const hotTotal = walletsWithBalance
-    .filter((w: { walletType: string }) => w.walletType === "HOT")
-    .reduce((sum: number, w: { balance: number }) => sum + w.balance, 0);
-  const warmTotal = walletsWithBalance
-    .filter((w: { walletType: string }) => w.walletType === "WARM")
-    .reduce((sum: number, w: { balance: number }) => sum + w.balance, 0);
-  const coldTotal = walletsWithBalance
-    .filter((w: { walletType: string }) => w.walletType === "COLD")
-    .reduce((sum: number, w: { balance: number }) => sum + w.balance, 0);
-  const networks = [...new Set(wallets.map((w: { network: string }) => w.network))];
-
-  res.json({ totalLiquidity, hotTotal, warmTotal, coldTotal, networks, wallets: walletsWithBalance, recentMovements: movements, snapshots });
-
 });
 
 router.get("/liquidity", authenticate, async (_req: AuthRequest, res: Response) => {
