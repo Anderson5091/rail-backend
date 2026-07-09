@@ -614,31 +614,39 @@ model AgentKpi {
 }
 
 model AgentCashRequest {
-  id        String   @id
-  agentId   String
-  amount    Decimal  @db.Decimal(24, 8)
-  status    String   @default("PENDING")
-  notes     String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  agent     Agent    @relation(fields: [agentId], references: [id])
-  settlement AgentSettlement?
+  id               String   @id
+  agentId          String
+  amount           Decimal  @db.Decimal(24, 8)
+  status           String   @default("PENDING")
+  destination      String?
+  bankName         String?
+  accountNumber    String?
+  country          String?
+  notes            String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  agent            Agent    @relation(fields: [agentId], references: [id])
+  settlement       AgentSettlement?
 }
 
 model AgentSettlement {
-  id              String   @id
-  agentId         String
-  cashRequestId   String?  @unique
-  amount          Decimal  @db.Decimal(24, 8)
-  bankName        String
-  referenceNumber String
-  proofImage      String?
-  status          String   @default("PENDING")
-  notes           String?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-  agent           Agent    @relation(fields: [agentId], references: [id])
-  cashRequest     AgentCashRequest? @relation(fields: [cashRequestId], references: [id])
+  id                String   @id
+  agentId           String
+  cashRequestId     String?  @unique
+  amount            Decimal  @db.Decimal(24, 8)
+  bankName          String
+  referenceNumber   String
+  proofImage        String?
+  depositBankName   String?
+  depositAccountNumber String?
+  depositAccountName   String?
+  depositCountry    String?
+  status            String   @default("PENDING")
+  notes             String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  agent             Agent    @relation(fields: [agentId], references: [id])
+  cashRequest       AgentCashRequest? @relation(fields: [cashRequestId], references: [id])
 }
 
 model AdminActionLog {

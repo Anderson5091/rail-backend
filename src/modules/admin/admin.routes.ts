@@ -7,7 +7,7 @@ import { ledgerService } from "../ledger/ledger.service";
 const router = Router();
 
 router.get("/dashboard", authenticate, requireRole("SUPER_ADMIN", "ADMIN", "COMPLIANCE", "TREASURY", "OPS"), async (_req: AuthRequest, res: Response) => {
-  const [totalUsers, activeUsers, totalTransfers, pendingKyc, totalVolume, failedPayouts, openCases, fraudAlerts, partnerAgents, internalAgents, alerts, recentActivity, tier1Count, tier2Count, tier3Count] = await Promise.all([
+  const [totalUsers, activeUsers, totalTransfers, pendingKyc, totalVolume, failedPayouts, openCases, fraudAlerts, partnerAgents, internalAgents, pendingCashRequests, pendingSettlements, pendingTransfers, pendingReconciliation, discrepancyReconciliation, alerts, recentActivity, tier1Count, tier2Count, tier3Count] = await Promise.all([
     prisma.user.count(),
     prisma.user.count({ where: { wallets: { status: "ACTIVE" } } }),
     prisma.transfer.count(),
@@ -18,6 +18,11 @@ router.get("/dashboard", authenticate, requireRole("SUPER_ADMIN", "ADMIN", "COMP
     prisma.systemAlert.count({ where: { severity: { in: ["CRITICAL", "HIGH"] }, status: "OPEN" } }),
     prisma.agent.count({ where: { type: "PARTNER" } }),
     prisma.agent.count({ where: { type: "INTERNAL" } }),
+    prisma.agentCashRequest.count({ where: { status: "PENDING" } }),
+    prisma.agentSettlement.count({ where: { status: "PENDING" } }),
+    prisma.transfer.count({ where: { status: { notIn: ["COMPLETED", "FAILED", "CANCELLED"] } } }),
+    prisma.payoutOrder.count({ where: { status: "DELIVERED" } }),
+    prisma.payoutOrder.count({ where: { status: "FAILED" } }),
     prisma.systemAlert.findMany({ where: { status: "OPEN" }, orderBy: { createdAt: "desc" }, take: 10 }),
     prisma.adminActionLog.findMany({ orderBy: { createdAt: "desc" }, take: 10 }),
     prisma.user.count({ where: { kycTier: 1 } }),
@@ -37,6 +42,11 @@ router.get("/dashboard", authenticate, requireRole("SUPER_ADMIN", "ADMIN", "COMP
     totalAgents: partnerAgents + internalAgents,
     partnerAgents,
     internalAgents,
+    pendingCashRequests,
+    pendingSettlements,
+    pendingTransfers,
+    pendingReconciliation,
+    discrepancyReconciliation,
     kycTiers: { tier1: tier1Count, tier2: tier2Count, tier3: tier3Count },
     alerts: alerts.map((a: { id: string; severity: string; message: string | null; createdAt: Date }) => ({
       id: a.id,
@@ -658,6 +668,114 @@ router.get("/audit-logs", authenticate, requireRole("SUPER_ADMIN", "ADMIN", "COM
     metadata: l.metadata,
     createdAt: l.createdAt,
   })));
+});
+
+// --- Admin Cash Requests & Settlements ---
+
+router.get("/cash-requests", authenticate, requireRole("SUPER_ADMIN", "ADMIN", "OPS", "TREASURY"), async (_req: AuthRequest, res: Response) => {
+  try {
+    const requests = await prisma.agentCashRequest.findMany({
+      orderBy: { createdAt: "desc" },
+      take: 100,
+      include: { agent: { select: { id: true, name: true, email: true, type: true } } },
+    });
+    res.json(requests);
+  } catch (error: any) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+router.get("/settlements", authenticate, requireRole("SUPER_ADMIN", "ADMIN", "OPS", "TREASURY"), async (_req: AuthRequest, res: Response) => {
+  try {
+    const settlements = await prisma.agentSettlement.findMany({
+      orderBy: { createdAt: "desc" },
+      take: 100,
+      include: { agent: { select: { id: true, name: true, email: true, type: true } }, cashRequest: true },
+    });
+    res.json(settlements);
+  } catch (error: any) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+// --- Admin Cash Request Processing ---
+
+router.post("/cash-requests/:id/process", authenticate, requireRole("SUPER_ADMIN", "ADMIN", "OPS", "TREASURY"), async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { status } = req.body;
+    if (!["PROCESSING", "DELIVERED", "REJECTED"].includes(status)) {
+      res.status(400).json({ error: "Invalid status. Must be PROCESSING, DELIVERED, or REJECTED" });
+      return;
+    }
+
+    const cashRequest = await prisma.agentCashRequest.findUnique({ where: { id } });
+    if (!cashRequest) { res.status(404).json({ error: "Cash request not found" }); return; }
+
+    const updated = await prisma.agentCashRequest.update({
+      where: { id },
+      data: { status },
+    });
+
+    await prisma.agentTransaction.updateMany({
+      where: { metadata: { path: "$.cashRequestId", equals: id }, type: "CASH_REQUEST" },
+      data: { status },
+    });
+
+    await prisma.adminActionLog.create({
+      data: {
+        adminId: req.userId!,
+        action: "UPDATE_CASH_REQUEST_STATUS",
+        entity: "AgentCashRequest",
+        entityId: id,
+        metadata: { previousStatus: cashRequest.status, newStatus: status },
+      },
+    });
+
+    res.json(updated);
+  } catch (error: any) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+// --- Admin Settlement Processing ---
+
+router.post("/settlements/:id/process", authenticate, requireRole("SUPER_ADMIN", "ADMIN", "OPS", "TREASURY"), async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { status } = req.body;
+    if (!["APPROVED", "REJECTED"].includes(status)) {
+      res.status(400).json({ error: "Invalid status. Must be APPROVED or REJECTED" });
+      return;
+    }
+
+    const settlement = await prisma.agentSettlement.findUnique({ where: { id } });
+    if (!settlement) { res.status(404).json({ error: "Settlement not found" }); return; }
+
+    const updated = await prisma.agentSettlement.update({
+      where: { id },
+      data: { status },
+    });
+
+    await prisma.agentTransaction.updateMany({
+      where: { metadata: { path: "$.settlementId", equals: id }, type: "SETTLEMENT" },
+      data: { status },
+    });
+
+    await prisma.adminActionLog.create({
+      data: {
+        adminId: req.userId!,
+        action: "UPDATE_SETTLEMENT_STATUS",
+        entity: "AgentSettlement",
+        entityId: id,
+        metadata: { previousStatus: settlement.status, newStatus: status },
+      },
+    });
+
+    res.json(updated);
+  } catch (error: any) {
+    res.status(400).json({ error: error.message });
+  }
 });
 
 export { router as adminRoutes };

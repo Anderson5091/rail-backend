@@ -773,7 +773,7 @@ router.post("/lookup-user", authenticate, requireRole("AGENT_PARTNER", "AGENT_IN
 router.post("/:id/request-cash", authenticate, requireRole("AGENT_INTERNAL", "AGENT_PARTNER", "SUPER_ADMIN"), async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
-    const { amount, notes } = req.body;
+    const { amount, destination, bankName, accountNumber, country, notes } = req.body;
     if (!amount || amount <= 0) {
       res.status(400).json({ error: "Valid amount is required" });
       return;
@@ -782,7 +782,7 @@ router.post("/:id/request-cash", authenticate, requireRole("AGENT_INTERNAL", "AG
     if (!agent) { res.status(404).json({ error: "Agent not found" }); return; }
 
     const cashRequest = await prisma.agentCashRequest.create({
-      data: { agentId: id, amount, notes, status: "PENDING" },
+      data: { agentId: id, amount, destination, bankName, accountNumber, country, notes, status: "PENDING" },
     });
 
     await prisma.agentTransaction.create({
@@ -793,7 +793,7 @@ router.post("/:id/request-cash", authenticate, requireRole("AGENT_INTERNAL", "AG
         netAmount: amount,
         status: "PENDING",
         reference: `CR-${cashRequest.id.slice(-8)}`,
-        metadata: { cashRequestId: cashRequest.id },
+        metadata: { cashRequestId: cashRequest.id, destination, bankName, accountNumber, country },
       },
     });
 
@@ -820,7 +820,7 @@ router.get("/:id/cash-requests", authenticate, requireRole("AGENT_INTERNAL", "AG
 router.post("/:id/submit-settlement", authenticate, requireRole("AGENT_INTERNAL", "AGENT_PARTNER", "SUPER_ADMIN"), async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
-    const { amount, bankName, referenceNumber, cashRequestId, notes } = req.body;
+    const { amount, bankName, referenceNumber, cashRequestId, proofImage, depositBankName, depositAccountNumber, depositAccountName, depositCountry, notes } = req.body;
     if (!amount || !bankName || !referenceNumber) {
       res.status(400).json({ error: "amount, bankName, and referenceNumber are required" });
       return;
@@ -835,6 +835,11 @@ router.post("/:id/submit-settlement", authenticate, requireRole("AGENT_INTERNAL"
         bankName,
         referenceNumber,
         cashRequestId: cashRequestId || null,
+        proofImage,
+        depositBankName,
+        depositAccountNumber,
+        depositAccountName,
+        depositCountry,
         notes,
         status: "PENDING",
       },
@@ -848,7 +853,7 @@ router.post("/:id/submit-settlement", authenticate, requireRole("AGENT_INTERNAL"
         netAmount: amount,
         status: "PENDING",
         reference: `ST-${settlement.id.slice(-8)}`,
-        metadata: { settlementId: settlement.id, bankName, referenceNumber },
+        metadata: { settlementId: settlement.id, bankName, referenceNumber, depositBankName, depositAccountNumber, depositAccountName },
       },
     });
 
