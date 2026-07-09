@@ -24,12 +24,12 @@ router.get("/onramp/transfers", authenticate, requireRole("SUPER_ADMIN", "TREASU
 
 router.post("/onramp/transfers", authenticate, requireRole("SUPER_ADMIN", "TREASURY"), async (req: AuthRequest, res: Response) => {
   try {
-    const { chain, fiatAmount, memoCode, notes } = req.body;
+    const { chain, fiatAmount, memoCode, notes, destinationWalletType } = req.body;
     if (!chain || !fiatAmount) {
       res.status(400).json({ error: "chain and fiatAmount are required" });
       return;
     }
-    const result = await treasuryRampService.createOnrampTransfer({ chain, fiatAmount, memoCode, notes });
+    const result = await treasuryRampService.createOnrampTransfer({ chain, fiatAmount, memoCode, notes, destinationWalletType });
     res.status(201).json(result);
   } catch (error: any) {
     res.status(400).json({ error: error.message });
@@ -38,7 +38,7 @@ router.post("/onramp/transfers", authenticate, requireRole("SUPER_ADMIN", "TREAS
 
 router.post("/onramp/card", authenticate, requireRole("SUPER_ADMIN", "TREASURY"), async (req: AuthRequest, res: Response) => {
   try {
-    const { chain, amount, receiptEmail } = req.body;
+    const { chain, amount, receiptEmail, destinationWalletType } = req.body;
     if (!chain || !amount) {
       res.status(400).json({ error: "chain and amount are required" });
       return;
@@ -47,6 +47,7 @@ router.post("/onramp/card", authenticate, requireRole("SUPER_ADMIN", "TREASURY")
       chain,
       amount,
       receiptEmail,
+      destinationWalletType,
       createdBy: req.userId || "ADMIN",
     });
     res.status(201).json(result);
@@ -77,7 +78,7 @@ router.get("/offramp/orders", authenticate, requireRole("SUPER_ADMIN", "TREASURY
 
 router.post("/offramp/orders", authenticate, requireRole("SUPER_ADMIN", "TREASURY"), async (req: AuthRequest, res: Response) => {
   try {
-    const { chain, amount, paymentMethodId } = req.body;
+    const { chain, amount, paymentMethodId, sourceWalletType } = req.body;
     if (!chain || !amount) {
       res.status(400).json({ error: "chain and amount are required" });
       return;
@@ -86,6 +87,7 @@ router.post("/offramp/orders", authenticate, requireRole("SUPER_ADMIN", "TREASUR
       chain,
       amount,
       paymentMethodId,
+      sourceWalletType,
       createdBy: req.userId || "ADMIN",
     });
     res.status(201).json(result);

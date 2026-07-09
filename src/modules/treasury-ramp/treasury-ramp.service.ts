@@ -47,18 +47,20 @@ export class TreasuryRampService {
     amount: number;
     paymentMethodId?: string;
     createdBy?: string;
+    sourceWalletType?: string;
   }) {
     const mapping = CHAIN_MAP[params.chain.toUpperCase()];
     if (!mapping) {
       throw new Error(`Unsupported chain: ${params.chain}`);
     }
 
-    const hotWallet = await prisma.treasuryWallet.findFirst({
-      where: { walletType: "HOT", chain: mapping.chain },
+    const walletType = params.sourceWalletType?.toUpperCase() || "HOT";
+    const sourceWallet = await prisma.treasuryWallet.findFirst({
+      where: { walletType, chain: mapping.chain },
     });
 
-    if (!hotWallet?.address) {
-      throw new Error("No HOT treasury wallet found for this chain");
+    if (!sourceWallet?.address) {
+      throw new Error(`No ${walletType} treasury wallet found for this chain`);
     }
 
     let paymentMethodId = params.paymentMethodId;
@@ -75,7 +77,7 @@ export class TreasuryRampService {
     }
 
     const result = await crossmintService.createTreasuryOfframpOrder({
-      payerAddress: hotWallet.address,
+      payerAddress: sourceWallet.address,
       chain: mapping.chain,
       paymentMethodId,
       amount: params.amount.toString(),
@@ -90,8 +92,8 @@ export class TreasuryRampService {
         fiatAmount: params.amount,
         status: "AWAITING_PAYMENT",
         crossmintOrderId: result.orderId,
-        treasuryWalletId: hotWallet.id,
-        fromWalletType: "HOT",
+        treasuryWalletId: sourceWallet.id,
+        fromWalletType: walletType,
         createdBy: params.createdBy || "SYSTEM",
       },
     });
@@ -105,8 +107,9 @@ export class TreasuryRampService {
       serializedTransaction: result.serializedTransaction,
       memo: result.memo,
       chain: mapping.chain,
-      payerAddress: hotWallet.address,
+      payerAddress: sourceWallet.address,
       amount: params.amount,
+      sourceWalletType: walletType,
     };
   }
 
@@ -204,33 +207,36 @@ export class TreasuryRampService {
     fiatAmount: number;
     memoCode?: string;
     notes?: string;
+    destinationWalletType?: string;
   }) {
     const mapping = CHAIN_MAP[params.chain.toUpperCase()];
     if (!mapping) throw new Error(`Unsupported chain: ${params.chain}`);
 
-    const hotWallet = await prisma.treasuryWallet.findFirst({
-      where: { walletType: "HOT", chain: mapping.chain },
+    const walletType = params.destinationWalletType?.toUpperCase() || "HOT";
+    const destWallet = await prisma.treasuryWallet.findFirst({
+      where: { walletType, chain: mapping.chain },
     });
 
-    if (!hotWallet) throw new Error("No HOT treasury wallet found for this chain");
+    if (!destWallet) throw new Error(`No ${walletType} treasury wallet found for this chain`);
 
     const transfer = await prisma.treasuryOnrampTransfer.create({
       data: {
         fiatAmount: params.fiatAmount,
         chain: mapping.chain.toUpperCase(),
         status: "PENDING",
-        treasuryWalletId: hotWallet.id,
+        treasuryWalletId: destWallet.id,
         memoCode: params.memoCode,
         notes: params.notes,
       },
     });
 
-    logger.info(`[TreasuryRamp] Onramp transfer ${transfer.id} recorded (${params.fiatAmount} USD -> ${mapping.chain})`);
+    logger.info(`[TreasuryRamp] Onramp transfer ${transfer.id} recorded (${params.fiatAmount} USD -> ${mapping.chain} ${walletType})`);
 
     return {
       id: transfer.id,
       status: "PENDING",
       memoCode: params.memoCode,
+      destinationWalletType: walletType,
       instructions: `Send ${params.fiatAmount} USD via bank transfer. Include memo code ${params.memoCode || "provided by Crossmint"} to ensure proper credit.`,
     };
   }
@@ -264,20 +270,22 @@ export class TreasuryRampService {
     amount: number;
     receiptEmail?: string;
     createdBy?: string;
+    destinationWalletType?: string;
   }) {
     const mapping = CHAIN_MAP[params.chain.toUpperCase()];
     if (!mapping) throw new Error(`Unsupported chain: ${params.chain}`);
 
-    const hotWallet = await prisma.treasuryWallet.findFirst({
-      where: { walletType: "HOT", chain: mapping.chain },
+    const walletType = params.destinationWalletType?.toUpperCase() || "HOT";
+    const destWallet = await prisma.treasuryWallet.findFirst({
+      where: { walletType, chain: mapping.chain },
     });
 
-    if (!hotWallet?.address) {
-      throw new Error("No HOT treasury wallet found for this chain");
+    if (!destWallet?.address) {
+      throw new Error(`No ${walletType} treasury wallet found for this chain`);
     }
 
     const result = await crossmintService.createCardOnrampOrder({
-      walletAddress: hotWallet.address,
+      walletAddress: destWallet.address,
       chain: mapping.chain,
       amount: params.amount.toString(),
       receiptEmail: params.receiptEmail,
@@ -288,20 +296,21 @@ export class TreasuryRampService {
         fiatAmount: params.amount,
         chain: mapping.chain.toUpperCase(),
         status: "AWAITING_PAYMENT",
-        treasuryWalletId: hotWallet.id,
+        treasuryWalletId: destWallet.id,
         crossmintOrderId: result.orderId,
-        notes: `Card deposit — client secret: ${result.clientSecret.slice(0, 20)}...`,
+        notes: `Card deposit → ${walletType} — client secret: ${result.clientSecret.slice(0, 20)}...`,
       },
     });
 
-    logger.info(`[TreasuryRamp] Card deposit ${deposit.id} created (order: ${result.orderId})`);
+    logger.info(`[TreasuryRamp] Card deposit ${deposit.id} created (order: ${result.orderId}, dest: ${walletType})`);
 
     return {
       id: deposit.id,
       orderId: result.orderId,
       clientSecret: result.clientSecret,
       status: "AWAITING_PAYMENT",
-      walletAddress: hotWallet.address,
+      walletAddress: destWallet.address,
+      walletType,
       chain: mapping.chain,
       amount: params.amount,
     };
