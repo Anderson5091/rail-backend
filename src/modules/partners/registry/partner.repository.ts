@@ -30,6 +30,22 @@ export class PartnerRepository {
     return db.partner.update({ where: { id }, data: { status: "INACTIVE" } });
   }
 
+  async activate(id: string) {
+    return db.partner.update({ where: { id }, data: { status: "ACTIVE" } });
+  }
+
+  async deletePartner(id: string) {
+    return db.partner.update({
+      where: { id },
+      data: {
+        name: "[Deleted Partner]",
+        baseUrl: null,
+        apiKey: null,
+        status: "DELETED",
+      },
+    });
+  }
+
   async createTransaction(data: { transferId: string; partnerId: string; externalReference?: string; status: string; requestPayload?: Record<string, unknown>; responsePayload?: Record<string, unknown> }) {
     return db.partnerTransaction.create({ data: data as any });
   }

@@ -21,6 +21,14 @@ export class PartnerService {
     return partnerRepository.remove(id);
   }
 
+  async activatePartner(id: string) {
+    return partnerRepository.activate(id);
+  }
+
+  async deletePartner(id: string) {
+    return partnerRepository.deletePartner(id);
+  }
+
   async getPartnerTransactions(partnerId: string) {
     return partnerRepository.findTransactionsByPartner(partnerId);
   }

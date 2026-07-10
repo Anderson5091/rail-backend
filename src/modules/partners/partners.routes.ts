@@ -48,6 +48,26 @@ router.delete("/:id", authenticate, requireRole("SUPER_ADMIN"), async (req: Auth
   res.json({ success: true });
 });
 
+router.post("/:id/delete", authenticate, requireRole("SUPER_ADMIN"), async (req: AuthRequest, res: Response) => {
+  const id = String(req.params.id);
+  const partner = await partnerService.getPartner(id);
+  if (!partner) return res.status(404).json({ error: "Partner not found" });
+  if (partner.status !== "INACTIVE") return res.status(400).json({ error: "Partner must be deactivated before deletion" });
+
+  await partnerService.deletePartner(id);
+  res.json({ success: true, message: "Partner deleted permanently" });
+});
+
+router.post("/:id/activate", authenticate, requireRole("SUPER_ADMIN"), async (req: AuthRequest, res: Response) => {
+  const id = String(req.params.id);
+  const partner = await partnerService.getPartner(id);
+  if (!partner) return res.status(404).json({ error: "Partner not found" });
+  if (partner.status !== "INACTIVE") return res.status(400).json({ error: "Partner is not inactive" });
+
+  await partnerService.activatePartner(id);
+  res.json({ success: true, status: "ACTIVE" });
+});
+
 router.get("/:id/transactions", authenticate, async (req: AuthRequest, res: Response) => {
   const transactions = await partnerService.getPartnerTransactions(req.params.id as string);
   res.json(transactions);
