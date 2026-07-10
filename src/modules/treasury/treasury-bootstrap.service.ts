@@ -10,7 +10,7 @@ interface TreasuryWalletConfig {
   thresholdMin?: number;
 }
 
-const REVENUE_CHAIN: ChainType = "base";
+const REVENUE_CHAIN: ChainType = ENV.TREASURY_CHAIN as ChainType;
 
 export class TreasuryBootstrapService {
   async bootstrapTreasuryWallets() {

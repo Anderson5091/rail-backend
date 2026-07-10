@@ -107,23 +107,21 @@ export class DepositService {
 
   private async createTronDepositRequest(userId: string, token: string) {
     const hotWallet = await prisma.treasuryWallet.findFirst({
-      where: { walletType: "HOT", chain: "base" },
+      where: { walletType: "HOT", chain: ENV.TREASURY_CHAIN },
     });
     if (!hotWallet?.address) throw new Error("Hot treasury not configured for Base");
 
-    const amountSmallestUnit = "1";
-
     const quote = await relayService.getQuote({
-      user: "0x0000000000000000000000000000000000000000",
+      user: hotWallet.address,
       recipient: hotWallet.address,
       originChainId: TRON_CHAIN_ID,
       originCurrency: TRON_USDT_CONTRACT,
       destinationChainId: BASE_CHAIN_ID,
       destinationCurrency: BASE_USDC_CONTRACT,
-      amount: amountSmallestUnit,
+      amount: "1000000",
       tradeType: "EXACT_INPUT",
       useDepositAddress: true,
-      refundTo: "0x0000000000000000000000000000000000000000",
+      refundTo: hotWallet.address,
     });
 
     const step = quote.steps?.find((s) => s.depositAddress);

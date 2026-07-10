@@ -3,12 +3,13 @@ import { ENV } from "../../config/env";
 import { crossmintService } from "../../services/crossmint.service";
 import { logger } from "../../utils/logger";
 
-const CHAIN_MAP: Record<string, { chain: string; network: string }> = {
-  BASE: { chain: "base", network: "BASE" },
-  ETHEREUM: { chain: "ethereum", network: "ETHEREUM" },
-  POLYGON: { chain: "polygon", network: "POLYGON" },
-  SOLANA: { chain: "solana", network: "SOLANA" },
-};
+const CHAIN_MAP: Record<string, { chain: string; network: string }> =
+  Object.fromEntries(
+    ENV.SUPPORTED_NETWORKS.map((net, i) => [
+      net,
+      { chain: ENV.NETWORK_CHAIN[i] || net.toLowerCase(), network: net },
+    ])
+  );
 
 export class TreasuryRampService {
   async getOnrampInfo() {
