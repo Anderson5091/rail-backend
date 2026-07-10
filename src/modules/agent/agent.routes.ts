@@ -41,12 +41,14 @@ router.post("/create", authenticate, requireRole("SUPER_ADMIN", "ADMIN", "OPS"),
     },
   });
 
-  const evmChain = ENV.NETWORK_CHAIN[ENV.SUPPORTED_NETWORKS.indexOf("BASE")] as ChainType;
-  const solanaChain = ENV.NETWORK_CHAIN[ENV.SUPPORTED_NETWORKS.indexOf("SOLANA")] as ChainType;
+  const chainMapping: Record<string, ChainType> = {
+    BASE: (ENV.NETWORK_CHAIN[ENV.SUPPORTED_NETWORKS.indexOf("BASE")] || "base-sepolia") as ChainType,
+    SOLANA: (ENV.NETWORK_CHAIN[ENV.SUPPORTED_NETWORKS.indexOf("SOLANA")] || "solana-devnet") as ChainType,
+  };
 
   const walletConfigs = [
-    { walletType: "MAIN", network: "BASE", chain: evmChain || ("base-sepolia" as ChainType), alias: `agent_wallet_${agent.id}_evm` },
-    { walletType: "SOLANA", network: "SOLANA", chain: solanaChain || ("solana" as ChainType), alias: `agent_wallet_${agent.id}_solana` },
+    { walletType: "MAIN", network: "BASE", chain: chainMapping.BASE, alias: `agent_wallet_${agent.id}_base` },
+    { walletType: "SOLANA", network: "SOLANA", chain: chainMapping.SOLANA, alias: `agent_wallet_${agent.id}_solana` },
   ];
 
   try {
@@ -508,9 +510,9 @@ router.get("/:id/recent-deposits", authenticate, requireRole("AGENT_PARTNER", "A
     const userIds = deposits.map((d: any) => d.userRef).filter(Boolean) as string[];
     const users = userIds.length > 0
       ? await prisma.user.findMany({
-          where: { id: { in: userIds } },
-          select: { id: true, email: true, fullName: true, phone: true },
-        })
+        where: { id: { in: userIds } },
+        select: { id: true, email: true, fullName: true, phone: true },
+      })
       : [];
     const userMap = new Map<string, { id: string; email: string; fullName: string | null; phone: string | null }>(
       users.map((u: { id: string; email: string; fullName: string | null; phone: string | null }) => [u.id, u])
@@ -546,9 +548,9 @@ router.get("/:id/recent-withdrawals", authenticate, requireRole("AGENT_PARTNER",
     const userIds = withdrawals.map((d: any) => d.userRef).filter(Boolean) as string[];
     const users = userIds.length > 0
       ? await prisma.user.findMany({
-          where: { id: { in: userIds } },
-          select: { id: true, email: true, fullName: true, phone: true },
-        })
+        where: { id: { in: userIds } },
+        select: { id: true, email: true, fullName: true, phone: true },
+      })
       : [];
     const userMap = new Map<string, { id: string; email: string; fullName: string | null; phone: string | null }>(
       users.map((u: { id: string; email: string; fullName: string | null; phone: string | null }) => [u.id, u])
