@@ -112,7 +112,7 @@ export class DepositService {
     if (!hotWallet?.address) throw new Error("Hot treasury not configured for Base");
 
     const quote = await relayService.getQuote({
-      user: hotWallet.address,
+      user: "0x0000000000000000000000000000000000000000",
       recipient: hotWallet.address,
       originChainId: TRON_CHAIN_ID,
       originCurrency: TRON_USDT_CONTRACT,
@@ -121,7 +121,6 @@ export class DepositService {
       amount: "1000000",
       tradeType: "EXACT_INPUT",
       useDepositAddress: true,
-      refundTo: hotWallet.address,
     });
 
     const step = quote.steps?.find((s) => s.depositAddress);

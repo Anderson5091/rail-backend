@@ -3,6 +3,7 @@ import { prisma } from "../../config/database";
 import { authenticate, AuthRequest, requireRole } from "../../middleware/auth";
 import { TreasuryOrchestrator } from "./treasury.orchestrator";
 import { treasuryRefillService } from "./treasury-refill.service";
+import { treasuryBootstrapService } from "./treasury-bootstrap.service";
 import { crossmintService } from "../../services/crossmint.service";
 import { extractBalance } from "../../utils/balance";
 import type { Chain } from "@crossmint/wallets-sdk";
@@ -74,6 +75,11 @@ router.post("/refill", authenticate, requireRole("SUPER_ADMIN", "TREASURY"), asy
 router.post("/snapshot", authenticate, requireRole("SUPER_ADMIN", "TREASURY"), async (_req: AuthRequest, res: Response) => {
   await treasuryRefillService.recordLiquiditySnapshot();
   res.json({ success: true, message: "Liquidity snapshot recorded" });
+});
+
+router.post("/bootstrap", authenticate, requireRole("SUPER_ADMIN", "TREASURY"), async (_req: AuthRequest, res: Response) => {
+  await treasuryBootstrapService.bootstrapTreasuryWallets();
+  res.json({ success: true, message: "Treasury wallets bootstrapped" });
 });
 
 router.get("/crossmint-balances", authenticate, requireRole("SUPER_ADMIN", "TREASURY"), async (_req: AuthRequest, res: Response) => {
