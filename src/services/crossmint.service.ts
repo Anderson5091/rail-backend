@@ -103,8 +103,8 @@ class CrossmintService {
     const owner = "COMPANY";
     await this.ensureInitialized();
 
-    const recoverySecret = ENV.TREASURY_RECOVERY_SECRET;
-    const signerSecret = ENV.TREASURY_SIGNER_SECRET;
+    const recoverySecret = ENV.TREASURY_RECOVERY_SECRET.replace(/^xmsk[12]_/, "");
+    const signerSecret = ENV.TREASURY_SIGNER_SECRET.replace(/^xmsk[12]_/, "");
 
     try {
       const params: any = {
@@ -156,8 +156,8 @@ class CrossmintService {
     const owner = "USER";
     await this.ensureInitialized();
 
-    const recoverySecret = ENV.WALLET_RECOVERY_SECRET || ENV.DEPOSIT_SIGNER_SECRET;
-    const signerSecret = ENV.WALLET_SIGNER_SECRET || ENV.DEPOSIT_SIGNER_SECRET;
+    const recoverySecret = (ENV.WALLET_RECOVERY_SECRET || ENV.DEPOSIT_SIGNER_SECRET).replace(/^xmsk[12]_/, "");
+    const signerSecret = (ENV.WALLET_SIGNER_SECRET || ENV.DEPOSIT_SIGNER_SECRET).replace(/^xmsk[12]_/, "");
 
     try {
       const params: any = {
