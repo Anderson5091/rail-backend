@@ -32,9 +32,8 @@ router.post("/login", async (req, res: Response) => {
   res.json({
     user: { id: agent.id, email: agent.email, type: agent.type, fullName: agent.fullName },
     token,
-    wallets: agent.wallets.map((w: { id: string; walletType: string; network: string; address: string; balance: { toString: () => string } }) => ({
+    wallets: agent.wallets.map((w: { id: string; network: string; address: string; balance: { toString: () => string } }) => ({
       id: w.id,
-      walletType: w.walletType,
       network: w.network,
       address: w.address,
       balance: Number(w.balance),
@@ -63,9 +62,8 @@ router.get("/me", authenticate, async (req: AuthRequest, res: Response) => {
     kpiRating: agent.kpiRating,
     totalRewards: Number(agent.totalRewards),
     ledgerBalance,
-    wallets: agent.wallets.map((w: { id: string; walletType: string; network: string; address: string; balance: { toString: () => string } }) => ({
+    wallets: agent.wallets.map((w: { id: string; network: string; address: string; balance: { toString: () => string } }) => ({
       id: w.id,
-      walletType: w.walletType,
       network: w.network,
       address: w.address,
       balance: Number(w.balance),

@@ -567,7 +567,6 @@ model AgentLedgerEntry {
 model AgentWallet {
   id                String   @id
   agentId           String
-  walletType        String
   network           String   @default("BASE")
   chain             String   @default("base")
   address           String   @unique

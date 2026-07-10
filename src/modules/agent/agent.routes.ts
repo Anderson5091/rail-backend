@@ -44,11 +44,15 @@ router.post("/create", authenticate, requireRole("SUPER_ADMIN", "ADMIN", "OPS"),
   const chainMapping: Record<string, ChainType> = {
     BASE: (ENV.NETWORK_CHAIN[ENV.SUPPORTED_NETWORKS.indexOf("BASE")] || "base-sepolia") as ChainType,
     SOLANA: (ENV.NETWORK_CHAIN[ENV.SUPPORTED_NETWORKS.indexOf("SOLANA")] || "solana-devnet") as ChainType,
+    POLYGON: (ENV.NETWORK_CHAIN[ENV.SUPPORTED_NETWORKS.indexOf("POLYGON")] || "polygon-amoy") as ChainType,
+    ETHEREUM: (ENV.NETWORK_CHAIN[ENV.SUPPORTED_NETWORKS.indexOf("ETHEREUM")] || "ethereum-sepolia") as ChainType,
   };
 
   const walletConfigs = [
-    { walletType: "MAIN", network: "BASE", chain: chainMapping.BASE, alias: `agent_wallet_${agent.id}_base` },
-    { walletType: "SOLANA", network: "SOLANA", chain: chainMapping.SOLANA, alias: `agent_wallet_${agent.id}_solana` },
+    { network: "BASE", chain: chainMapping.BASE, alias: `ag_${agent.id}_base` },
+    { network: "SOLANA", chain: chainMapping.SOLANA, alias: `ag_${agent.id}_solana` },
+    { network: "POLYGON", chain: chainMapping.POLYGON, alias: `ag_${agent.id}_polygon` },
+    { network: "ETHEREUM", chain: chainMapping.ETHEREUM, alias: `ag_${agent.id}_ethereum` },
   ];
 
   try {
@@ -57,7 +61,6 @@ router.post("/create", authenticate, requireRole("SUPER_ADMIN", "ADMIN", "OPS"),
       await prisma.agentWallet.create({
         data: {
           agentId: agent.id,
-          walletType: cfg.walletType,
           network: cfg.network,
           chain: cfg.chain,
           address: wallet.address,
@@ -191,7 +194,7 @@ router.get("/list", authenticate, requireRole("SUPER_ADMIN", "OPS", "TREASURY"),
   });
 
   res.json(
-    agents.map((a: { id: string; email: string; fullName: string | null; type: string; status: string; kpiRating: number | null; totalRewards: { toString: () => string }; _count: { transactions: number }; wallets: { walletType: string; balance: { toString: () => string } }[]; ledgerEntries: { type: string; amount: { toString: () => string } }[]; createdAt: Date }) => {
+    agents.map((a: { id: string; email: string; fullName: string | null; type: string; status: string; kpiRating: number | null; totalRewards: { toString: () => string }; _count: { transactions: number }; wallets: { balance: { toString: () => string } }[]; ledgerEntries: { type: string; amount: { toString: () => string } }[]; createdAt: Date }) => {
       const ledgerBalance = a.ledgerEntries.reduce((sum: number, e: { type: string; amount: { toString: () => string } }) => {
         return e.type === "CREDIT" ? sum + Number(e.amount) : sum - Number(e.amount);
       }, 0);
@@ -205,7 +208,7 @@ router.get("/list", authenticate, requireRole("SUPER_ADMIN", "OPS", "TREASURY"),
         kpiRating: a.kpiRating,
         totalRewards: Number(a.totalRewards),
         totalTransactions: a._count.transactions,
-        walletBalance: Number(a.wallets.find((w: { walletType: string }) => w.walletType === "MAIN" || w.walletType === "BASE_TREASURY")?.balance ?? 0),
+        walletBalance: Number(a.wallets[0]?.balance ?? 0),
         ledgerBalance,
         createdAt: a.createdAt,
       };
@@ -675,16 +678,15 @@ router.post("/:id/cancel-payout", authenticate, requireRole("AGENT_PARTNER", "AG
 
 router.post("/:id/swap", authenticate, requireRole("AGENT_PARTNER", "AGENT_INTERNAL"), async (req: AuthRequest, res: Response) => {
   try {
-    const { amount, direction, walletType } = req.body;
+    const { amount, direction } = req.body;
     if (!amount || amount <= 0) {
       return res.status(400).json({ error: "amount is required and must be greater than 0" });
     }
     if (!direction || !["TO_LEDGER", "TO_WALLET"].includes(direction)) {
       return res.status(400).json({ error: "direction must be TO_LEDGER or TO_WALLET" });
     }
-    const wt = walletType || "MAIN";
 
-    const result = await agentService.swapFunds(String(req.params.id), Number(amount), direction, wt);
+    const result = await agentService.swapFunds(String(req.params.id), Number(amount), direction);
     res.json(result);
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Swap failed";
@@ -694,14 +696,13 @@ router.post("/:id/swap", authenticate, requireRole("AGENT_PARTNER", "AGENT_INTER
 
 router.post("/:id/withdraw-wallet", authenticate, requireRole("AGENT_PARTNER", "AGENT_INTERNAL"), async (req: AuthRequest, res: Response) => {
   try {
-    const { amount, walletType } = req.body;
+    const { amount } = req.body;
     if (!amount || amount <= 0) {
       return res.status(400).json({ error: "amount is required and must be greater than 0" });
     }
-    const wt = walletType || "MAIN";
 
-    await agentService.walletWithdraw(String(req.params.id), Number(amount), wt);
-    res.json({ success: true, message: `Successfully withdrew ${Number(amount)} USDT from ${wt} wallet to hot treasury` });
+    await agentService.walletWithdraw(String(req.params.id), Number(amount));
+    res.json({ success: true, message: `Successfully withdrew ${Number(amount)} USDT to hot treasury` });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Wallet withdraw failed";
     res.status(400).json({ error: message });

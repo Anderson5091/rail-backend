@@ -74,9 +74,9 @@ export class AgentLedgerService {
     if (shortfall <= 0) return 0;
 
     const wallet = await prisma.agentWallet.findFirst({
-      where: { agentId, walletType: "MAIN" },
+      where: { agentId },
     });
-    if (!wallet) throw new Error("Agent MAIN wallet not found");
+    if (!wallet) throw new Error("Agent wallet not found");
 
     const available = Number(wallet.balance);
     const swapAmount = Math.min(shortfall, available);
