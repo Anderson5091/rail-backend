@@ -65,9 +65,9 @@ router.post("/create", authenticate, requireRole("SUPER_ADMIN", "ADMIN", "OPS"),
         },
       });
     }
-  } catch (error) {
+  } catch (error: any) {
     await prisma.agent.delete({ where: { id: agent.id } });
-    throw error;
+    return res.status(500).json({ error: `Agent created but wallet setup failed: ${error.message || "Unknown error"}` });
   }
 
   await prisma.adminActionLog.create({
