@@ -1,6 +1,8 @@
 import { Router, Response } from "express";
 import bcrypt from "bcryptjs";
+import jwt from "jsonwebtoken";
 import { prisma } from "../../config/database";
+import { ENV } from "../../config/env";
 import { authenticate, AuthRequest, requireRole } from "../../middleware/auth";
 import { ledgerService } from "../ledger/ledger.service";
 
@@ -579,6 +581,124 @@ router.post("/admins/:id/toggle-status", authenticate, requireRole("SUPER_ADMIN"
   });
 
   res.json({ status: newStatus });
+});
+
+router.post("/admins/:id/send-reset", authenticate, requireRole("SUPER_ADMIN"), async (req: AuthRequest, res: Response) => {
+  const admin = await prisma.adminUser.findUnique({ where: { id: req.params.id } });
+  if (!admin) return res.status(404).json({ error: "Admin not found" });
+  if (!admin.email) return res.status(400).json({ error: "Admin has no email" });
+
+  const resetToken = jwt.sign(
+    { adminId: admin.id, type: "password-reset" },
+    ENV.JWT_SECRET,
+    { expiresIn: "1h" },
+  );
+
+  const resetLink = `${ENV.ADMIN_APP_URL}/reset-password?token=${resetToken}`;
+
+  const html = `
+    <h2>Password Reset</h2>
+    <p>Hello ${admin.name || admin.email},</p>
+    <p>A password reset was requested for your Quick Send admin account.</p>
+    <p><a href="${resetLink}">Click here to reset your password</a></p>
+    <p>This link expires in 1 hour.</p>
+    <p>If you did not request this, you can safely ignore this email.</p>
+  `;
+
+  try {
+    const { Resend } = await import("resend");
+    const resend = new Resend(ENV.RESEND_API_KEY);
+    const { error } = await resend.emails.send({
+      from: ENV.EMAIL_FROM,
+      to: admin.email,
+      subject: "Quick Send Admin — Password Reset",
+      html,
+    });
+    if (error) throw new Error(error.message);
+  } catch (err: any) {
+    return res.status(500).json({ error: `Failed to send email: ${err.message}` });
+  }
+
+  await prisma.adminActionLog.create({
+    data: {
+      adminId: req.userId,
+      action: "SEND_RESET_EMAIL",
+      entity: "AdminUser",
+      entityId: req.params.id,
+      metadata: { email: admin.email },
+    },
+  });
+
+  res.json({ success: true, message: "Reset email sent" });
+});
+
+router.post("/reset-password", async (req: AuthRequest, res: Response) => {
+  const { token, password } = req.body;
+  if (!token || !password) return res.status(400).json({ error: "token and password are required" });
+  if (password.length < 8) return res.status(400).json({ error: "Password must be at least 8 characters" });
+
+  let decoded: { adminId: string; type: string };
+  try {
+    decoded = jwt.verify(token, ENV.JWT_SECRET) as { adminId: string; type: string };
+    if (decoded.type !== "password-reset") return res.status(400).json({ error: "Invalid token type" });
+  } catch {
+    return res.status(400).json({ error: "Invalid or expired token" });
+  }
+
+  const admin = await prisma.adminUser.findUnique({ where: { id: decoded.adminId } });
+  if (!admin) return res.status(404).json({ error: "Admin not found" });
+
+  const passwordHash = await bcrypt.hash(password, 12);
+  await prisma.adminUser.update({
+    where: { id: decoded.adminId },
+    data: { passwordHash },
+  });
+
+  res.json({ success: true, message: "Password updated successfully" });
+});
+
+router.put("/admins/:id", authenticate, requireRole("SUPER_ADMIN"), async (req: AuthRequest, res: Response) => {
+  const { name, role, email, password } = req.body;
+  const validRoles = ["SUPER_ADMIN", "ADMIN", "COMPLIANCE", "OPS", "TREASURY"];
+
+  if (role && !validRoles.includes(role)) {
+    return res.status(400).json({ error: "Invalid role" });
+  }
+
+  if (password && password.length < 8) {
+    return res.status(400).json({ error: "Password must be at least 8 characters" });
+  }
+
+  const admin = await prisma.adminUser.findUnique({ where: { id: req.params.id } });
+  if (!admin) return res.status(404).json({ error: "Admin not found" });
+
+  if (email && email !== admin.email) {
+    const existing = await prisma.adminUser.findUnique({ where: { email } });
+    if (existing) return res.status(409).json({ error: "Email already in use" });
+  }
+
+  const updated = await prisma.adminUser.update({
+    where: { id: req.params.id },
+    data: {
+      ...(name !== undefined && { name }),
+      ...(role !== undefined && { role }),
+      ...(email !== undefined && { email }),
+      ...(password !== undefined && { passwordHash: await bcrypt.hash(password, 12) }),
+    },
+    select: { id: true, email: true, name: true, role: true, status: true, createdAt: true },
+  });
+
+  await prisma.adminActionLog.create({
+    data: {
+      adminId: req.userId,
+      action: "UPDATE_ADMIN",
+      entity: "AdminUser",
+      entityId: req.params.id,
+      metadata: { changes: { ...req.body, password: password ? "***" : undefined } },
+    },
+  });
+
+  res.json(updated);
 });
 
 router.delete("/admins/:id", authenticate, requireRole("SUPER_ADMIN"), async (req: AuthRequest, res: Response) => {
