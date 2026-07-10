@@ -252,6 +252,8 @@ model DepositRequest {
   depositWalletId String?
   txHash          String?
   depositWallet   DepositWallet? @relation(fields: [depositWalletId], references: [id])
+  relayRequestId  String?        @unique
+  depositAddress  String?
 }
 
 model DepositWallet {

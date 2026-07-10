@@ -1,6 +1,7 @@
 import crypto from "crypto";
 import { prisma } from "../../config/database";
 import { crossmintService, type ChainType } from "../../services/crossmint.service";
+import { relayService } from "../../services/relay.service";
 import { ENV } from "../../config/env";
 import { ledgerService } from "../ledger/ledger.service";
 import { feeService } from "../fees/fee.service";
@@ -13,6 +14,11 @@ const chainMapping: Record<string, ChainType> = {
   ETHEREUM: (ENV.NETWORK_CHAIN[ENV.SUPPORTED_NETWORKS.indexOf("ETHEREUM")] || "ethereum-sepolia") as ChainType,
 };
 
+const TRON_CHAIN_ID = 728126428;
+const TRON_USDT_CONTRACT = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t";
+const BASE_CHAIN_ID = 8453;
+const BASE_USDC_CONTRACT = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
+
 function randomHex(length: number): string {
   return crypto.randomBytes(Math.ceil(length / 2)).toString("hex").slice(0, length);
 }
@@ -22,6 +28,11 @@ const REQUIRED_CONFIRMATIONS = 5;
 export class DepositService {
   async createDepositRequest(userId: string, chain: string, token: string = "USDT") {
     const network = chain.toUpperCase();
+
+    if (network === "TRON") {
+      return this.createTronDepositRequest(userId, token);
+    }
+
     const c = chainMapping[network];
     if (!c) {
       throw new Error(`Unsupported chain: ${chain}`);
@@ -92,6 +103,72 @@ export class DepositService {
       logger.error(`[Deposit] Failed to create wallet for user ${userId}:`, error);
       throw new Error("Failed to create deposit wallet");
     }
+  }
+
+  private async createTronDepositRequest(userId: string, token: string) {
+    const hotWallet = await prisma.treasuryWallet.findFirst({
+      where: { walletType: "HOT", chain: "base" },
+    });
+    if (!hotWallet?.address) throw new Error("Hot treasury not configured for Base");
+
+    const amountSmallestUnit = "1";
+
+    const quote = await relayService.getQuote({
+      user: "0x0000000000000000000000000000000000000000",
+      recipient: hotWallet.address,
+      originChainId: TRON_CHAIN_ID,
+      originCurrency: TRON_USDT_CONTRACT,
+      destinationChainId: BASE_CHAIN_ID,
+      destinationCurrency: BASE_USDC_CONTRACT,
+      amount: amountSmallestUnit,
+      tradeType: "EXACT_INPUT",
+      useDepositAddress: true,
+      refundTo: "0x0000000000000000000000000000000000000000",
+    });
+
+    const step = quote.steps?.find((s) => s.depositAddress);
+    if (!step?.depositAddress || !step.requestId) {
+      throw new Error("Relay did not return a deposit address");
+    }
+
+    const depositAddress = step.depositAddress;
+    const requestId = step.requestId;
+
+    const depositRequest = await prisma.depositRequest.create({
+      data: {
+        userId,
+        chain: "TRON",
+        token,
+        status: "AWAITING_DEPOSIT",
+        relayRequestId: requestId,
+        depositAddress,
+      },
+    });
+
+    const internalWallet = await prisma.wallet.findFirst({
+      where: { userId },
+    });
+
+    if (internalWallet) {
+      await prisma.walletTransaction.create({
+        data: {
+          walletId: internalWallet.id,
+          type: "DEPOSIT",
+          amount: 0,
+          network: "TRON",
+          txHash: depositRequest.id,
+          status: "PENDING",
+        },
+      });
+    }
+
+    logger.info(`[Deposit] TRON deposit request ${depositRequest.id} via Relay: address=${depositAddress}, requestId=${requestId}`);
+
+    return {
+      depositId: depositRequest.id,
+      network: "TRON",
+      address: depositAddress,
+    };
   }
 
   async handleDepositDetected(
@@ -281,7 +358,7 @@ export class DepositService {
       txHash: depositRequest.txHash,
       confirmations: depositRequest.confirmations,
       status: depositRequest.status,
-      address: depositRequest.depositWallet?.address || null,
+      address: depositRequest.depositWallet?.address || depositRequest.depositAddress || null,
       addressStatus: depositRequest.depositWallet?.status || null,
       expiresAt: depositRequest.depositWallet?.expiresAt?.toISOString() || null,
       createdAt: depositRequest.createdAt.toISOString(),
@@ -306,6 +383,10 @@ export class DepositService {
 
     if (next >= REQUIRED_CONFIRMATIONS) {
       await this.approveDeposit(depositRequestId);
+
+      if (depositRequest.chain === "TRON") {
+        await this.creditUserBalance(depositRequestId);
+      }
     }
 
     return { confirmations: next };

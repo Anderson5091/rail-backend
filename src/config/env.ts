@@ -57,6 +57,10 @@ export const ENV = {
   WARM_REFILL_AMOUNT: parseFloat(process.env.WARM_REFILL_AMOUNT || "1000000"),
   REFILL_INTERVAL: parseInt(process.env.REFILL_INTERVAL || "60000", 10),
 
+  // Relay Configuration
+  RELAY_API_KEY: process.env.RELAY_API_KEY || "",
+  RELAY_BASE_URL: process.env.RELAY_BASE_URL || "https://api.relay.link",
+
   // Didit Configuration
   DIDIT_API_KEY: process.env.DIDIT_API_KEY || "",
   DIDIT_API_BASE_URL: process.env.DIDIT_API_BASE_URL || "https://verification.didit.me",
