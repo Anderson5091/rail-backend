@@ -120,6 +120,71 @@ router.post("/users/:id/toggle-status", authenticate, requireRole("SUPER_ADMIN")
   res.json({ status: newStatus });
 });
 
+router.put("/users/:id", authenticate, requireRole("SUPER_ADMIN", "ADMIN"), async (req: AuthRequest, res: Response) => {
+  const { email } = req.body;
+  if (!email) return res.status(400).json({ error: "Email is required" });
+
+  const user = await prisma.user.findUnique({ where: { id: req.params.id } });
+  if (!user) return res.status(404).json({ error: "User not found" });
+
+  if (email !== user.email) {
+    const existing = await prisma.user.findUnique({ where: { email } });
+    if (existing) return res.status(409).json({ error: "Email already in use" });
+  }
+
+  const updated = await prisma.user.update({
+    where: { id: req.params.id },
+    data: { email },
+    select: { id: true, email: true },
+  });
+
+  await prisma.adminActionLog.create({
+    data: {
+      adminId: req.userId,
+      action: "UPDATE_USER_EMAIL",
+      entity: "User",
+      entityId: req.params.id,
+      metadata: { previousEmail: user.email, newEmail: email },
+    },
+  });
+
+  res.json(updated);
+});
+
+router.delete("/users/:id", authenticate, requireRole("SUPER_ADMIN"), async (req: AuthRequest, res: Response) => {
+  const user = await prisma.user.findUnique({ where: { id: req.params.id } });
+  if (!user) return res.status(404).json({ error: "User not found" });
+
+  const wallet = await prisma.wallet.findFirst({ where: { userId: user.id } });
+  if (wallet?.status !== "FROZEN") return res.status(400).json({ error: "Only frozen users can be deleted" });
+
+  await (prisma as any).$transaction([
+    (prisma as any).walletTransaction.deleteMany({ where: { walletId: wallet.id } }),
+    (prisma as any).ledgerEntry.deleteMany({ where: { walletId: wallet.id } }),
+    (prisma as any).payoutEvent.deleteMany({ where: { payoutOrder: { transfer: { userId: user.id } } } }),
+    (prisma as any).payoutOrder.deleteMany({ where: { transfer: { userId: user.id } } }),
+    (prisma as any).transfer.deleteMany({ where: { userId: user.id } }),
+    (prisma as any).wallet.delete({ where: { id: wallet.id } }),
+    (prisma as any).adminActionLog.deleteMany({ where: { entityId: user.id, entity: "User" } }),
+    (prisma as any).kycEvent.deleteMany({ where: { userId: user.id } }),
+    (prisma as any).kycProfile.deleteMany({ where: { userId: user.id } }),
+    (prisma as any).complianceCase.deleteMany({ where: { userId: user.id } }),
+    (prisma as any).user.delete({ where: { id: user.id } }),
+  ]);
+
+  await prisma.adminActionLog.create({
+    data: {
+      adminId: req.userId,
+      action: "DELETE_USER",
+      entity: "User",
+      entityId: req.params.id,
+      metadata: { email: user.email },
+    },
+  });
+
+  res.json({ success: true });
+});
+
 router.get("/kyc/pending", authenticate, requireRole("SUPER_ADMIN", "ADMIN", "COMPLIANCE"), async (_req: AuthRequest, res: Response) => {
   const pending = await prisma.kycProfile.findMany({
     where: { status: { in: ["PENDING", "PENDING_REVIEW", "IN_REVIEW"] } },

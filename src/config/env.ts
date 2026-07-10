@@ -16,7 +16,7 @@ export const ENV = {
   // Resend (Email) Configuration
   RESEND_API_KEY: process.env.RESEND_API_KEY || "",
   EMAIL_FROM: process.env.EMAIL_FROM || "Quick Send <noreply@quicksend.com.mx>",
-  ADMIN_APP_URL: process.env.ADMIN_APP_URL || "http://localhost:5173",
+  ADMIN_APP_URL: process.env.ADMIN_APP_URL || "http://localhost:5173" || "http://localhost:5174",
 
   // Twilio (SMS) Configuration
   TWILIO_ACCOUNT_SID: process.env.TWILIO_ACCOUNT_SID || "",
