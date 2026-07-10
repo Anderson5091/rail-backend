@@ -153,7 +153,6 @@ class CrossmintService {
     userId: string,
     alias: string
   ): Promise<CrossmintWalletResult> {
-    const owner = "USER";
     await this.ensureInitialized();
 
     const recoverySecret = ENV.WALLET_RECOVERY_SECRET || ENV.DEPOSIT_SIGNER_SECRET;
@@ -170,7 +169,6 @@ class CrossmintService {
           { type: "server", secret: signerSecret },
         ],
         alias,
-        owner,
       };
 
       const wallet = await this.walletsSdk.createWallet(params);
