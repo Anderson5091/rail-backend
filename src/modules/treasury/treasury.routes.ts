@@ -78,8 +78,13 @@ router.post("/snapshot", authenticate, requireRole("SUPER_ADMIN", "TREASURY"), a
 });
 
 router.post("/bootstrap", authenticate, requireRole("SUPER_ADMIN", "TREASURY"), async (_req: AuthRequest, res: Response) => {
-  await treasuryBootstrapService.bootstrapTreasuryWallets();
-  res.json({ success: true, message: "Treasury wallets bootstrapped" });
+  try {
+    await treasuryBootstrapService.bootstrapTreasuryWallets();
+    const count = await prisma.treasuryWallet.count();
+    res.json({ success: true, message: `Treasury wallets bootstrapped. ${count} wallet(s) in inventory.` });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || "Failed to bootstrap treasury wallets" });
+  }
 });
 
 router.get("/crossmint-balances", authenticate, requireRole("SUPER_ADMIN", "TREASURY"), async (_req: AuthRequest, res: Response) => {
