@@ -1,53 +1,13 @@
 import { z } from "zod";
 import { Router, Response } from "express";
 import { prisma } from "../../config/database";
-import { ENV } from "../../config/env";
 import { authenticate, AuthRequest } from "../../middleware/auth";
-import { crossmintService, type ChainType } from "../../services/crossmint.service";
 import { depositService } from "../deposit/deposit.service";
 import { ledgerService } from "../ledger/ledger.service";
 import { lockService } from "../../services/lock.service";
-import { logger } from "../../utils/logger";
 import { generateTransactionNumber } from "../../utils/id-generator";
 
 const router = Router();
-
-async function ensureUserDepositWallets(userId: string) {
-  const evmChain = ENV.NETWORK_CHAIN[ENV.SUPPORTED_NETWORKS.indexOf("BASE")] as ChainType;
-  const solanaChain = ENV.NETWORK_CHAIN[ENV.SUPPORTED_NETWORKS.indexOf("SOLANA")] as ChainType;
-
-  const walletConfigs = [
-    { alias: "evm", chain: evmChain || ("base-sepolia" as ChainType) },
-    { alias: "solana", chain: solanaChain || ("solana" as ChainType) },
-  ];
-
-  for (const cfg of walletConfigs) {
-    const existing = await prisma.depositWallet.findUnique({
-      where: { userId_alias: { userId, alias: cfg.alias } },
-    });
-
-    if (existing) continue;
-
-    try {
-      const wallet = await crossmintService.createUserWallet(cfg.chain, "DEPOSIT", userId, cfg.alias);
-
-      await prisma.depositWallet.create({
-        data: {
-          userId,
-          alias: cfg.alias,
-          crossmintWalletId: wallet.crossmintWalletId,
-          walletLocator: wallet.walletLocator,
-          address: wallet.address,
-          chain: cfg.chain,
-        },
-      });
-
-      logger.info(`[Wallet] Created ${cfg.alias} wallet for user ${userId}: ${wallet.address}`);
-    } catch (error) {
-      logger.error(`[Wallet] Failed to create ${cfg.alias} wallet for user ${userId}:`, error);
-    }
-  }
-}
 
 router.get("/", authenticate, async (req: AuthRequest, res: Response) => {
   let wallet = await prisma.wallet.findFirst({
@@ -59,12 +19,6 @@ router.get("/", authenticate, async (req: AuthRequest, res: Response) => {
       data: { userId: req.userId! },
     });
   }
-
-  await ensureUserDepositWallets(req.userId!);
-
-  const depositWallets = await prisma.depositWallet.findMany({
-    where: { userId: req.userId },
-  });
 
   const credits = await prisma.ledgerEntry.aggregate({
     where: { walletId: wallet.id, type: "CREDIT" },
@@ -94,22 +48,7 @@ router.get("/", authenticate, async (req: AuthRequest, res: Response) => {
     status: wallet.status,
     availableBalance: availableBalance.toFixed(2),
     pendingBalance: Number(pendingOut._sum.amount || 0).toFixed(2),
-    cryptoWallets: depositWallets.map((w: { alias: string; chain: string; address: string }) => ({
-      network: w.alias.toUpperCase(),
-      chain: w.chain,
-      address: w.address,
-    })),
   });
-});
-
-router.get("/crypto-wallets", authenticate, async (req: AuthRequest, res: Response) => {
-  await ensureUserDepositWallets(req.userId!);
-
-  const wallets = await prisma.depositWallet.findMany({
-    where: { userId: req.userId },
-  });
-
-  res.json(wallets);
 });
 
 router.get("/addresses", authenticate, async (req: AuthRequest, res: Response) => {

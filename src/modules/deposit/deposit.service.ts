@@ -1,3 +1,4 @@
+import crypto from "crypto";
 import { prisma } from "../../config/database";
 import { crossmintService, type ChainType } from "../../services/crossmint.service";
 import { ENV } from "../../config/env";
@@ -5,96 +6,92 @@ import { ledgerService } from "../ledger/ledger.service";
 import { feeService } from "../fees/fee.service";
 import { logger } from "../../utils/logger";
 
-const CHAIN_MAP: Record<string, { chain: ChainType; alias: string }> = {
-  BASE: { chain: "base", alias: "evm" },
-  ETHEREUM: { chain: "ethereum", alias: "evm" },
-  POLYGON: { chain: "polygon", alias: "evm" },
-  SOLANA: { chain: "solana", alias: "solana" },
+const chainMapping: Record<string, ChainType> = {
+  BASE: (ENV.NETWORK_CHAIN[ENV.SUPPORTED_NETWORKS.indexOf("BASE")] || "base-sepolia") as ChainType,
+  SOLANA: (ENV.NETWORK_CHAIN[ENV.SUPPORTED_NETWORKS.indexOf("SOLANA")] || "solana-devnet") as ChainType,
+  POLYGON: (ENV.NETWORK_CHAIN[ENV.SUPPORTED_NETWORKS.indexOf("POLYGON")] || "polygon-amoy") as ChainType,
+  ETHEREUM: (ENV.NETWORK_CHAIN[ENV.SUPPORTED_NETWORKS.indexOf("ETHEREUM")] || "ethereum-sepolia") as ChainType,
 };
+
+function randomHex(length: number): string {
+  return crypto.randomBytes(Math.ceil(length / 2)).toString("hex").slice(0, length);
+}
 
 const REQUIRED_CONFIRMATIONS = 5;
 
 export class DepositService {
   async createDepositRequest(userId: string, chain: string, token: string = "USDT") {
-    const mapping = CHAIN_MAP[chain.toUpperCase()];
-    if (!mapping) {
+    const network = chain.toUpperCase();
+    const c = chainMapping[network];
+    if (!c) {
       throw new Error(`Unsupported chain: ${chain}`);
     }
 
-    const alias = mapping.alias;
+    const alias = `${network}_${randomHex(20)}`;
 
-    let depositWallet = await prisma.depositWallet.findUnique({
-      where: { userId_alias: { userId, alias } },
-    });
+    try {
+      const wallet = await crossmintService.createUserWallet(c, "DEPOSIT", userId, alias);
 
-    if (!depositWallet) {
-      try {
-        const wallet = await crossmintService.createUserWallet(
-          mapping.chain,
-          "DEPOSIT",
-          userId,
-          alias
-        );
-        depositWallet = await prisma.depositWallet.create({
-          data: {
-            userId,
-            alias,
-            crossmintWalletId: wallet.crossmintWalletId,
-            walletLocator: wallet.walletLocator,
-            address: wallet.address,
-            chain: mapping.chain,
-          },
-        });
-        logger.info(`[Deposit] Created ${alias} wallet for user ${userId}: ${wallet.address}`);
-      } catch (error) {
-        logger.error(`[Deposit] Failed to create wallet for user ${userId}:`, error);
-        throw new Error("Failed to create deposit wallet");
-      }
-    }
-
-    const depositRequest = await prisma.depositRequest.create({
-      data: {
-        userId,
-        depositWalletId: depositWallet.id,
-        chain: chain.toUpperCase(),
-        token,
-        status: "WALLET_CREATED",
-      },
-    });
-
-    const now = Date.now();
-    await prisma.depositWallet.update({
-      where: { id: depositWallet.id },
-      data: { 
-        expiresAt: new Date(now + 5 * 60 * 1000),
-        status: "CREATED"
-      },
-    });
-
-    const internalWallet = await prisma.wallet.findFirst({
-      where: { userId },
-    });
-
-    if (internalWallet) {
-      await prisma.walletTransaction.create({
+      const depositWallet = await prisma.depositWallet.create({
         data: {
-          walletId: internalWallet.id,
-          type: "DEPOSIT",
-          amount: 0,
-          network: chain.toUpperCase(),
-          txHash: depositRequest.id,
-          status: "PENDING",
+          userId,
+          alias,
+          crossmintWalletId: wallet.crossmintWalletId,
+          walletLocator: wallet.walletLocator,
+          address: wallet.address,
+          chain: c,
         },
       });
+
+      logger.info(`[Deposit] Created ${alias} wallet for user ${userId}: ${wallet.address}`);
+
+      const depositRequest = await prisma.depositRequest.create({
+        data: {
+          userId,
+          depositWalletId: depositWallet.id,
+          chain: network,
+          token,
+          status: "WALLET_CREATED",
+        },
+      });
+
+      const now = Date.now();
+      await prisma.depositWallet.update({
+        where: { id: depositWallet.id },
+        data: { 
+          expiresAt: new Date(now + 5 * 60 * 1000),
+          status: "CREATED"
+        },
+      });
+
+      const internalWallet = await prisma.wallet.findFirst({
+        where: { userId },
+      });
+
+      if (internalWallet) {
+        await prisma.walletTransaction.create({
+          data: {
+            walletId: internalWallet.id,
+            type: "DEPOSIT",
+            amount: 0,
+            network,
+            txHash: depositRequest.id,
+            status: "PENDING",
+          },
+        });
+      }
+
+      logger.info(`[Deposit] Deposit request ${depositRequest.id} using wallet ${depositWallet.address}`);
+
+      return {
+        depositId: depositRequest.id,
+        network,
+        address: depositWallet.address,
+      };
+    } catch (error) {
+      logger.error(`[Deposit] Failed to create wallet for user ${userId}:`, error);
+      throw new Error("Failed to create deposit wallet");
     }
-
-    logger.info(`[Deposit] Deposit request ${depositRequest.id} using wallet ${depositWallet.address}`);
-
-    return {
-      depositId: depositRequest.id,
-      network: chain.toUpperCase(),
-      address: depositWallet.address,
-    };
   }
 
   async handleDepositDetected(
@@ -189,8 +186,8 @@ export class DepositService {
     }
 
     const depositWallet = depositRequest.depositWallet;
-    const mapping = CHAIN_MAP[depositRequest.chain.toUpperCase()];
-    if (!mapping) throw new Error(`Unsupported chain: ${depositRequest.chain}`);
+    const c = chainMapping[depositRequest.chain.toUpperCase()];
+    if (!c) throw new Error(`Unsupported chain: ${depositRequest.chain}`);
 
     if (!depositWallet.walletLocator) {
       throw new Error("Deposit wallet locator not found");
@@ -202,7 +199,7 @@ export class DepositService {
         hotWallet.address,
         depositRequest.token.toLowerCase(),
         depositRequest.amount?.toString() || "0",
-        mapping.chain
+        c
       );
 
       await prisma.depositRequest.update({
