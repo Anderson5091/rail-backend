@@ -14,7 +14,7 @@ import type { ChainType } from "../../services/crossmint.service";
 
 const router = Router();
 
-router.post("/create", authenticate, requireRole("SUPER_ADMIN", "OPS"), async (req: AuthRequest, res: Response) => {
+router.post("/create", authenticate, requireRole("SUPER_ADMIN", "ADMIN", "OPS"), async (req: AuthRequest, res: Response) => {
   const { email, password, fullName, phone, type } = req.body;
 
   if (!email || !password || !type) {
