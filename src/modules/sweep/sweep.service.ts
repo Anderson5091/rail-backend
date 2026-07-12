@@ -20,6 +20,11 @@ export class SweepService {
         data: { status: "FAILED" },
       });
 
+      await prisma.walletTransaction.updateMany({
+        where: { txHash: req.id, type: "DEPOSIT" },
+        data: { status: "FAILED" },
+      });
+
       logger.info(`[Sweep] Expired deposit request ${req.id} (status was ${req.status})`);
     }
   }
