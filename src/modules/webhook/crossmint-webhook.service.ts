@@ -1,6 +1,7 @@
 import crypto from "crypto";
 import { Request, Response } from "express";
 import { ENV } from "../../config/env";
+import { prisma } from "../../config/database";
 import { depositService } from "../deposit/deposit.service";
 import { logger } from "../../utils/logger";
 
@@ -110,11 +111,7 @@ export class CrossmintWebhookService {
       return;
     }
 
-    await depositService.approveDeposit(depositRequestId);
-
-    await depositService.sweepToHotTreasury(depositRequestId);
-
-    await depositService.creditUserBalance(depositRequestId);
+    logger.info(`[CrossmintWebhook] Deposit detected for request ${depositRequestId} — awaiting confirmations`);
   }
 
   private async handleTransferSent(payload: CrossmintWebhookPayload) {
@@ -124,7 +121,25 @@ export class CrossmintWebhookService {
 
   private async handleTransactionConfirmed(payload: CrossmintWebhookPayload) {
     const { data } = payload;
-    logger.info(`[CrossmintWebhook] Transaction confirmed: ${data.txHash || data.transactionId}`);
+    const txHash = data.txHash || data.transactionId || "";
+    const walletId = data.walletId || data.walletLocator || "";
+
+    if (!txHash) {
+      logger.warn("[CrossmintWebhook] Invalid transaction confirmed payload:", data);
+      return;
+    }
+
+    const depositRequest = await prisma.depositRequest.findFirst({
+      where: { txHash, status: { notIn: ["COMPLETED", "FAILED"] } },
+    });
+
+    if (!depositRequest) {
+      logger.warn(`[CrossmintWebhook] No active deposit found for txHash: ${txHash}`);
+      return;
+    }
+
+    logger.info(`[CrossmintWebhook] Transaction confirmed for deposit ${depositRequest.id}: tx=${txHash}`);
+    await depositService.confirmDeposit(depositRequest.id);
   }
 }
 

@@ -417,6 +417,9 @@ export class DepositService {
 
       if (depositRequest.chain === "TRON") {
         await this.creditUserBalance(depositRequestId);
+      } else {
+        await this.sweepToHotTreasury(depositRequestId);
+        await this.creditUserBalance(depositRequestId);
       }
     }
 
