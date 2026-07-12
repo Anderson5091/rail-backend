@@ -38,6 +38,50 @@ export class DepositService {
       throw new Error(`Unsupported chain: ${chain}`);
     }
 
+    const existingWallet = await prisma.depositWallet.findFirst({
+      where: { userId, chain: c, status: "AVAILABLE" },
+      include: { depositRequests: { where: { status: { notIn: ["FAILED", "COMPLETED"] } }, take: 1 } },
+    });
+
+    const canReuse = existingWallet && existingWallet.depositRequests.length === 0;
+
+    if (canReuse) {
+      logger.info(`[Deposit] Reusing existing ${network} wallet ${existingWallet.address} for user ${userId}`);
+
+      const depositRequest = await prisma.depositRequest.create({
+        data: {
+          userId,
+          depositWalletId: existingWallet.id,
+          chain: network,
+          token,
+          status: "WALLET_CREATED",
+        },
+      });
+
+      const internalWallet = await prisma.wallet.findFirst({
+        where: { userId },
+      });
+
+      if (internalWallet) {
+        await prisma.walletTransaction.create({
+          data: {
+            walletId: internalWallet.id,
+            type: "DEPOSIT",
+            amount: 0,
+            network,
+            txHash: depositRequest.id,
+            status: "PENDING",
+          },
+        });
+      }
+
+      return {
+        depositId: depositRequest.id,
+        network,
+        address: existingWallet.address,
+      };
+    }
+
     const alias = `${network}_${randomHex(20)}`;
 
     try {
@@ -51,6 +95,7 @@ export class DepositService {
           walletLocator: wallet.walletLocator,
           address: wallet.address,
           chain: c,
+          status: "AVAILABLE",
         },
       });
 
@@ -63,15 +108,6 @@ export class DepositService {
           chain: network,
           token,
           status: "WALLET_CREATED",
-        },
-      });
-
-      const now = Date.now();
-      await prisma.depositWallet.update({
-        where: { id: depositWallet.id },
-        data: { 
-          expiresAt: new Date(now + 5 * 60 * 1000),
-          status: "CREATED"
         },
       });
 
@@ -195,7 +231,12 @@ export class DepositService {
       },
     });
 
-    logger.info(`[Deposit] Deposit detected for request ${depositRequest.id}: ${amount} ${chain} tx=${txHash}`);
+    await prisma.depositWallet.update({
+      where: { id: depositWallet.id },
+      data: { status: "USED" },
+    });
+
+    logger.info(`[Deposit] Deposit detected for request ${depositRequest.id}: ${amount} ${chain} tx=${txHash}; wallet ${depositWallet.id} marked USED`);
 
     const internalWallet = await prisma.wallet.findFirst({
       where: { userId: depositWallet.userId },
@@ -327,13 +368,6 @@ export class DepositService {
       where: { id: depositRequestId },
       data: { status: "COMPLETED" },
     });
-
-    if (depositRequest.depositWallet) {
-      await prisma.depositWallet.update({
-        where: { id: depositRequest.depositWallet.id },
-        data: { status: "ACTIVE" },
-      });
-    }
 
     logger.info(`[Deposit] Credited user ${depositRequest.userId} with ${depositRequest.netAmount} for deposit ${depositRequestId}`);
   }

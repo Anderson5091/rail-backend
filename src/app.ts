@@ -29,6 +29,7 @@ import { agentRoutes } from "./modules/agent/agent.routes";
 import { agentAuthRoutes } from "./modules/agent/agent-auth.routes";
 import { feeRoutes } from "./modules/fees/fee.routes";
 import { publicFeeRoutes } from "./modules/fees/public-fee.routes";
+import { sweepService } from "./modules/sweep/sweep.service";
 
 const app = express();
 const httpServer = createServer(app);
@@ -78,6 +79,12 @@ app.use("/api/v1/admin/revenue", adminRevenueRoutes);
 app.use("/api/v1/fees", publicFeeRoutes);
 
 app.use(errorHandler);
+
+setInterval(() => {
+  sweepService.sweepExpiredDepositRequests().catch((err) =>
+    console.error("[Sweep] Error sweeping expired deposits:", err)
+  );
+}, 60_000);
 
 export { app, httpServer };
 export default app;
