@@ -105,7 +105,6 @@ async function main() {
         data: {
           id: genId("QSAW"),
           agentId: agent.id,
-          walletType: wallet.walletType,
           network: "BASE",
           chain: "base",
           address: `seed_${agentData.type}_${wallet.walletType}_${agent.id}`,
