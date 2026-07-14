@@ -3,7 +3,14 @@ import { PrismaClient } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import bcrypt from "bcryptjs";
 import dotenv from "dotenv";
-import { generateModelId } from "../src/utils/id-generator";
+
+function genId(prefix: string): string {
+  const bytes = crypto.randomBytes(14);
+  const chars = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+  let r = "";
+  for (let i = 0; i < 14; i++) r += chars[bytes[i] % chars.length];
+  return prefix + r;
+}
 
 dotenv.config();
 
@@ -60,9 +67,10 @@ async function main() {
     }
 
     const passwordHash = await bcrypt.hash(admin.password, 12);
+    const rolePrefix: Record<string, string> = { SUPER_ADMIN: "QS-SAD", OPS: "QS-OPS", TREASURY: "QS-TRE", COMPLIANCE: "QS-COM" };
     await prisma.adminUser.create({
       data: {
-        id: generateModelId("AdminUser", admin) || crypto.randomUUID(),
+        id: genId(rolePrefix[admin.role] || "QS-ADM"),
         email: admin.email,
         passwordHash,
         role: admin.role,
@@ -80,9 +88,10 @@ async function main() {
     }
 
     const passwordHash = await bcrypt.hash(agentData.password, 12);
+    const aPrefix = agentData.type === "INTERNAL" ? "QSIA" : agentData.type === "PARTNER" ? "QSPA" : "QSA";
     const agent = await prisma.agent.create({
       data: {
-        id: generateModelId("Agent", agentData) || crypto.randomUUID(),
+        id: genId(aPrefix),
         email: agentData.email,
         passwordHash,
         fullName: agentData.fullName,
@@ -143,7 +152,7 @@ async function main() {
 
     await prisma.treasuryWallet.create({
       data: {
-        id: generateModelId("TreasuryWallet", tw) || crypto.randomUUID(),
+        id: genId("QSTW"),
         walletType: tw.walletType,
         chain: tw.chain,
         network: tw.network,
