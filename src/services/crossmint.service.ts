@@ -168,6 +168,7 @@ class CrossmintService {
         signers: [
           { type: "server", secret: signerSecret },
         ],
+        owner: "USER",
         alias,
       };
 
