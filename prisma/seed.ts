@@ -103,6 +103,7 @@ async function main() {
     for (const wallet of agentData.wallets) {
       await prisma.agentWallet.create({
         data: {
+          id: genId("QSAW"),
           agentId: agent.id,
           walletType: wallet.walletType,
           network: "BASE",
