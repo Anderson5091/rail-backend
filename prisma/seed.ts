@@ -3,6 +3,7 @@ import { PrismaClient } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import bcrypt from "bcryptjs";
 import dotenv from "dotenv";
+import { generateModelId } from "../src/utils/id-generator";
 
 dotenv.config();
 
@@ -61,6 +62,7 @@ async function main() {
     const passwordHash = await bcrypt.hash(admin.password, 12);
     await prisma.adminUser.create({
       data: {
+        id: generateModelId("AdminUser", admin) || crypto.randomUUID(),
         email: admin.email,
         passwordHash,
         role: admin.role,
@@ -80,6 +82,7 @@ async function main() {
     const passwordHash = await bcrypt.hash(agentData.password, 12);
     const agent = await prisma.agent.create({
       data: {
+        id: generateModelId("Agent", agentData) || crypto.randomUUID(),
         email: agentData.email,
         passwordHash,
         fullName: agentData.fullName,
@@ -140,6 +143,7 @@ async function main() {
 
     await prisma.treasuryWallet.create({
       data: {
+        id: generateModelId("TreasuryWallet", tw) || crypto.randomUUID(),
         walletType: tw.walletType,
         chain: tw.chain,
         network: tw.network,
