@@ -84,8 +84,11 @@ export class DepositService {
 
     const alias = `${network}_${randomHex(20)}`;
 
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new Error(`User not found: ${userId}`);
+
     try {
-      const wallet = await crossmintService.createUserWallet(c, "DEPOSIT", userId, alias);
+      const wallet = await crossmintService.createUserWallet(c, "DEPOSIT", user.email, alias);
 
       const depositWallet = await prisma.depositWallet.create({
         data: {

@@ -150,7 +150,7 @@ class CrossmintService {
   async createUserWallet(
     chain: ChainType,
     type: "DEPOSIT" | "AGENT",
-    userId: string,
+    email: string,
     alias: string
   ): Promise<CrossmintWalletResult> {
     await this.ensureInitialized();
@@ -179,8 +179,8 @@ class CrossmintService {
       const chainType = chainStr.includes("solana") ? "solana" : "evm";
 
       // Build the standard Crossmint server-side wallet locator:
-      // userId:<userId>:<chainType>:smart:alias:<alias>
-      const walletLocator = `userId:${userId}:${chainType}:smart:alias:${alias}`;
+      // email:<email>:<chainType>:smart:alias:<alias>
+      const walletLocator = `email:${email}:${chainType}:smart:alias:${alias}`;
 
       return {
         crossmintWalletId: wallet.address,
