@@ -57,7 +57,7 @@ router.post("/create", authenticate, requireRole("SUPER_ADMIN", "ADMIN", "OPS"),
 
   try {
     for (const cfg of walletConfigs) {
-      const wallet = await crossmintService.createUserWallet(cfg.chain, "AGENT", agent.email, cfg.alias);
+      const wallet = await crossmintService.createUserWallet(cfg.chain, "AGENT", agent.id, cfg.alias);
       await prisma.agentWallet.create({
         data: {
           agentId: agent.id,
