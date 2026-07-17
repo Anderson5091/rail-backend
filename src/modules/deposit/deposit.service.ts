@@ -28,6 +28,9 @@ export class DepositService {
     const network = chain.toUpperCase();
 
     if (network === "TRON") {
+      if (ENV.APP_CURRENCY_TOKEN !== "USDT") {
+        throw new Error("TRON deposits are only available for USDT");
+      }
       return this.createTronDepositRequest(userId, token);
     }
 
@@ -149,7 +152,7 @@ export class DepositService {
       user: "0x0000000000000000000000000000000000000000",
       recipient: hotWallet.address,
       originChainId: TRON_CHAIN_ID,
-      originCurrency: ENV.TRON_TOKEN_CONTRACT,
+      originCurrency: ENV.TRON_USDT_CONTRACT,
       destinationChainId: BASE_CHAIN_ID,
       destinationCurrency: ENV.BASE_TOKEN_CONTRACT,
       amount: "1000000",

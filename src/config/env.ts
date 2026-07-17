@@ -39,7 +39,7 @@ export const ENV = {
   // Token Configuration
   APP_CURRENCY_TOKEN: process.env.APP_CURRENCY_TOKEN || "USDT",
   APP_TOKEN_NAME: process.env.APP_TOKEN_NAME || "USDT",
-  TRON_TOKEN_CONTRACT: process.env.TRON_TOKEN_CONTRACT || "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t",
+  TRON_USDT_CONTRACT: process.env.TRON_USDT_CONTRACT || "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t",
   BASE_TOKEN_CONTRACT: process.env.BASE_TOKEN_CONTRACT || "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
 
   // User Wallet Defaults
