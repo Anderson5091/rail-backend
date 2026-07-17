@@ -97,7 +97,7 @@ export class WithdrawalService {
       const result = await crossmintService.sendTransfer(
         hotWallet.walletLocator,
         withdrawal.destinationAddress,
-        "usdt",
+        ENV.APP_CURRENCY_TOKEN.toLowerCase(),
         withdrawal.netAmount.toString(),
         chainType
       );

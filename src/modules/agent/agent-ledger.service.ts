@@ -93,7 +93,7 @@ export class AgentLedgerService {
         await crossmintService.sendTransfer(
           wallet.walletLocator,
           hotWallet.address,
-          "usdt",
+          ENV.APP_CURRENCY_TOKEN.toLowerCase(),
           swapAmount.toString(),
           chainType
         );

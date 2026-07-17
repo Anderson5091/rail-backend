@@ -57,10 +57,10 @@ export class TreasuryRefillService {
     try {
       const hotBalances = await crossmintService.getWalletBalance(
         hotWallet.walletLocator,
-        ["usdt"]
+        [ENV.APP_CURRENCY_TOKEN.toLowerCase()]
       );
 
-      const hotUsdtBalance = extractBalance(hotBalances, "usdt");
+      const hotUsdtBalance = extractBalance(hotBalances, ENV.APP_CURRENCY_TOKEN.toLowerCase());
       const thresholdMin = Number(hotWallet.thresholdMin || ENV.HOT_THRESHOLD_MIN);
 
       if (hotUsdtBalance < thresholdMin) {
@@ -82,7 +82,7 @@ export class TreasuryRefillService {
         const result = await crossmintService.internalTransfer(
           warmWallet.walletLocator,
           hotWallet.walletLocator!,
-          "usdt",
+          ENV.APP_CURRENCY_TOKEN.toLowerCase(),
           refillAmount.toString(),
           chainType
         );
@@ -110,7 +110,7 @@ export class TreasuryRefillService {
       }
 
       const warmUsdtBalance = warmWallet?.walletLocator
-        ? extractBalance(await crossmintService.getWalletBalance(warmWallet.walletLocator, ["usdt"]), "usdt")
+        ? extractBalance(await crossmintService.getWalletBalance(warmWallet.walletLocator, [ENV.APP_CURRENCY_TOKEN.toLowerCase()]), ENV.APP_CURRENCY_TOKEN.toLowerCase())
         : 0;
 
       const warmThresholdMin = Number(warmWallet?.thresholdMin || ENV.WARM_THRESHOLD_MIN);

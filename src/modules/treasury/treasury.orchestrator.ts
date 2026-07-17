@@ -24,10 +24,10 @@ export class TreasuryOrchestrator {
 
     const hotBalances = await crossmintService.getWalletBalance(
       hot.walletLocator,
-      ["usdt"]
+      [ENV.APP_CURRENCY_TOKEN.toLowerCase()]
     );
 
-    const hotBalance = extractBalance(hotBalances, "usdt");
+    const hotBalance = extractBalance(hotBalances, ENV.APP_CURRENCY_TOKEN.toLowerCase());
     const thresholdMin = Number(hot.thresholdMin || ENV.HOT_THRESHOLD_MIN);
 
     if (hotBalance < thresholdMin) {
@@ -40,7 +40,7 @@ export class TreasuryOrchestrator {
       const result = await crossmintService.internalTransfer(
         warm.walletLocator,
         hot.walletLocator!,
-        "usdt",
+        ENV.APP_CURRENCY_TOKEN.toLowerCase(),
         refillAmount.toString(),
         chainType
       );

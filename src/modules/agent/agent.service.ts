@@ -375,13 +375,13 @@ export class AgentService {
       const chainType = wallet.chain as ChainType;
       const balances = await crossmintService.getWalletBalance(
         wallet.walletLocator,
-        ["usdt"],
+        [ENV.APP_CURRENCY_TOKEN.toLowerCase()],
         chainType
       );
-      const usdtToken = balances.tokens?.find(
-        (t: any) => t.symbol?.toLowerCase() === "usdt"
+      const tokenBalance = balances.tokens?.find(
+        (t: any) => t.symbol?.toLowerCase() === ENV.APP_CURRENCY_TOKEN.toLowerCase()
       );
-      const liveBalance = usdtToken ? Number(usdtToken.amount) : 0;
+      const liveBalance = tokenBalance ? Number(tokenBalance.amount) : 0;
       if (liveBalance !== Number(wallet.balance)) {
         await prisma.agentWallet.update({
           where: { id: wallet.id },
@@ -600,7 +600,7 @@ export class AgentService {
         txResult = await crossmintService.sendTransfer(
           wallet.walletLocator,
           hotWallet.address,
-          "usdt",
+          ENV.APP_CURRENCY_TOKEN.toLowerCase(),
           amount.toString(),
           chainType
         );
@@ -639,7 +639,7 @@ export class AgentService {
         txResult = await crossmintService.sendTransfer(
           hotWallet.walletLocator,
           wallet.address,
-          "usdt",
+          ENV.APP_CURRENCY_TOKEN.toLowerCase(),
           amount.toString(),
           chainType
         );
@@ -694,7 +694,7 @@ export class AgentService {
       const result = await crossmintService.sendTransfer(
         wallet.walletLocator,
         hotWallet.address,
-        "usdt",
+        ENV.APP_CURRENCY_TOKEN.toLowerCase(),
         amount.toString(),
         chainType
       );

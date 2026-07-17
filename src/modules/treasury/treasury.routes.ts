@@ -1,5 +1,6 @@
 import { Router, Response } from "express";
 import { prisma } from "../../config/database";
+import { ENV } from "../../config/env";
 import { authenticate, AuthRequest, requireRole } from "../../middleware/auth";
 import { TreasuryOrchestrator } from "./treasury.orchestrator";
 import { treasuryRefillService } from "./treasury-refill.service";
@@ -36,9 +37,9 @@ router.get("/overview", authenticate, async (_req: AuthRequest, res: Response) =
     for (const wallet of wallets) {
       const locator = wallet.walletLocator || wallet.address;
       if (!locator) continue;
-      crossmintService.getWalletBalance(locator, ["usdc", "usdt", "usdxm"], wallet.chain as Chain)
+      crossmintService.getWalletBalance(locator, ["usdc", "usdt", "usdxm", ENV.APP_CURRENCY_TOKEN.toLowerCase()], wallet.chain as Chain)
         .then((balances) => {
-          const bal = extractBalance(balances, "usdc") || extractBalance(balances, "usdt") || extractBalance(balances, "usdxm") || 0;
+          const bal = extractBalance(balances, "usdc") || extractBalance(balances, "usdt") || extractBalance(balances, "usdxm") || extractBalance(balances, ENV.APP_CURRENCY_TOKEN.toLowerCase()) || 0;
           if (bal > 0) {
             return prisma.treasuryWallet.update({ where: { id: wallet.id }, data: { balance: bal, lastSync: new Date() } });
           }
@@ -96,10 +97,10 @@ router.get("/crossmint-balances", authenticate, requireRole("SUPER_ADMIN", "TREA
   const results = await Promise.allSettled(
     wallets.map(async (wallet: { walletLocator: string; chain: string; walletType: string; network: string; address: string }) => {
       const chain = wallet.chain as Chain;
-      const bal = await crossmintService.getWalletBalance(wallet.walletLocator, ["usdc", "usdt", "usdxm"], chain);
+      const bal = await crossmintService.getWalletBalance(wallet.walletLocator, ["usdc", "usdt", "usdxm", ENV.APP_CURRENCY_TOKEN.toLowerCase()], chain);
       return {
         key: `${wallet.walletType}_${wallet.network}`,
-        data: { address: wallet.address, chain: wallet.chain, balance: extractBalance(bal, "usdc") || extractBalance(bal, "usdt") || extractBalance(bal, "usdxm") || 0, walletLocator: wallet.walletLocator },
+        data: { address: wallet.address, chain: wallet.chain, balance: extractBalance(bal, "usdc") || extractBalance(bal, "usdt") || extractBalance(bal, "usdxm") || extractBalance(bal, ENV.APP_CURRENCY_TOKEN.toLowerCase()) || 0, walletLocator: wallet.walletLocator },
       };
     })
   );
