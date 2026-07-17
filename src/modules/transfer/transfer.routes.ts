@@ -6,6 +6,7 @@ import { idempotencyMiddleware } from "../../middleware/idempotency.middleware";
 import { fxService } from "../fx/fx.service";
 import { feeService } from "../fees/fee.service";
 import { TransferOrchestrator } from "./transfer.orchestrator";
+import { ENV } from "../../config/env";
 
 const router = Router();
 
@@ -21,7 +22,7 @@ const orchestrator = new TransferOrchestrator();
 router.post("/quote", async (req: AuthRequest, res: Response) => {
   const { amount, currency, country, method, accountCurrency } = req.body;
   const destCurrency = currency || await fxService.resolveCurrency(country, method, accountCurrency);
-  const fxRate = await fxService.getRate("USDT", destCurrency);
+  const fxRate = await fxService.getRate(ENV.APP_CURRENCY_TOKEN, destCurrency);
   const { fee } = await feeService.calculate(country, method, amount);
   const destinationAmount = (amount - fee) * fxRate;
 

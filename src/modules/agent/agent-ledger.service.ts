@@ -1,5 +1,6 @@
 import { prisma } from "../../config/database";
 import { logger } from "../../utils/logger";
+import { ENV } from "../../config/env";
 import { crossmintService, type ChainType } from "../../services/crossmint.service";
 
 export class AgentLedgerService {
@@ -109,7 +110,7 @@ export class AgentLedgerService {
 
     await this.credit(agentId, swapAmount, "SWAP", `auto_swap_${agentId}_${Date.now()}`, "Auto-swap from Crossmint wallet");
 
-    logger.info(`[AgentLedger] Auto-swapped ${swapAmount} USDT from Crossmint wallet for agent ${agentId}`);
+    logger.info(`[AgentLedger] Auto-swapped ${swapAmount} ${ENV.APP_CURRENCY_TOKEN} from Crossmint wallet for agent ${agentId}`);
     return swapAmount;
   }
 

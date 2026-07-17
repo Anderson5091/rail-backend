@@ -3,6 +3,7 @@ import { z } from "zod";
 import { authenticate, AuthRequest } from "../../middleware/auth";
 import { fxService } from "../fx/fx.service";
 import { feeService } from "../fees/fee.service";
+import { ENV } from "../../config/env";
 
 const router = Router();
 
@@ -17,7 +18,7 @@ router.post("/quote", authenticate, async (req: AuthRequest, res: Response) => {
   const data = quoteSchema.parse(req.body);
 
   const currency = await fxService.resolveCurrency(data.country, data.method, data.accountCurrency);
-  const fxRate = await fxService.getRate("USDT", currency);
+  const fxRate = await fxService.getRate(ENV.APP_CURRENCY_TOKEN, currency);
   const { fee } = await feeService.calculate(data.country, data.method, data.amount);
   const destinationAmount = (data.amount - fee) * fxRate;
 

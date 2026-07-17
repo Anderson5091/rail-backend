@@ -3,6 +3,7 @@ import { Router, Response } from "express";
 import { prisma } from "../../config/database";
 import { authenticate, AuthRequest } from "../../middleware/auth";
 import { depositService } from "../deposit/deposit.service";
+import { ENV } from "../../config/env";
 import { ledgerService } from "../ledger/ledger.service";
 import { lockService } from "../../services/lock.service";
 import { generateTransactionNumber } from "../../utils/id-generator";
@@ -222,7 +223,7 @@ router.post("/internal-transfer", authenticate, async (req: AuthRequest, res: Re
 
 const createDepositSchema = z.object({
   chain: z.enum(["BASE", "ETHEREUM", "POLYGON", "SOLANA"]),
-  token: z.string().default("USDT"),
+  token: z.string().default(ENV.APP_CURRENCY_TOKEN),
 });
 
 router.post("/create-deposit", authenticate, async (req: AuthRequest, res: Response) => {

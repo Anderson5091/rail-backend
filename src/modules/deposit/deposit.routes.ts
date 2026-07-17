@@ -11,7 +11,7 @@ const router = Router();
 
 const createDepositSchema = z.object({
   chain: z.enum(["BASE", "ETHEREUM", "POLYGON", "SOLANA", "TRON"]),
-  token: z.string().default("USDT"),
+  token: z.string().default(ENV.APP_CURRENCY_TOKEN),
 });
 
 router.post("/create", authenticate, async (req: AuthRequest, res: Response) => {

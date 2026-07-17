@@ -36,6 +36,12 @@ export const ENV = {
   WALLET_SIGNER_SECRET: process.env.WALLET_SIGNER_SECRET || "",
   WALLET_RECOVERY_SECRET: process.env.WALLET_RECOVERY_SECRET || "",
 
+  // Token Configuration
+  APP_CURRENCY_TOKEN: process.env.APP_CURRENCY_TOKEN || "USDT",
+  APP_TOKEN_NAME: process.env.APP_TOKEN_NAME || "USDT",
+  TRON_TOKEN_CONTRACT: process.env.TRON_TOKEN_CONTRACT || "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t",
+  BASE_TOKEN_CONTRACT: process.env.BASE_TOKEN_CONTRACT || "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+
   // User Wallet Defaults
   USER_WALLET_CHAIN: process.env.USER_WALLET_CHAIN || "base",
 

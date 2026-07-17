@@ -2,6 +2,7 @@ import { eventEmitter } from "./event.emitter";
 import { notificationService } from "../notifications/notification.service";
 import { logger } from "../../utils/logger";
 import type { EventPayload } from "./event.types";
+import { ENV } from "../../config/env";
 
 const eventNotificationMap: Record<string, { type: string; title: string; messageTemplate: string }> = {
   TRANSFER_CREATED: { type: "TRANSFER_UPDATE", title: "Transfer Created", messageTemplate: "Your transfer of {{amount}} has been initiated." },
@@ -18,8 +19,8 @@ const eventNotificationMap: Record<string, { type: string; title: string; messag
   ACCOUNT_BLOCKED: { type: "SECURITY_ALERT", title: "Account Blocked", messageTemplate: "Your account has been temporarily blocked." },
   LIQUIDITY_LOW: { type: "TREASURY_ALERT", title: "Liquidity Low", messageTemplate: "Liquidity for {{network}} is below threshold." },
   REBALANCE_TRIGGERED: { type: "TREASURY_ALERT", title: "Rebalance Triggered", messageTemplate: "Treasury rebalance initiated for {{network}}." },
-  DEPOSIT_RECEIVED: { type: "WALLET_ALERT", title: "Deposit Received", messageTemplate: "{{amount}} USDT has been deposited to your wallet." },
-  WITHDRAWAL_PROCESSED: { type: "WALLET_ALERT", title: "Withdrawal Processed", messageTemplate: "{{amount}} USDT has been withdrawn from your wallet." },
+  DEPOSIT_RECEIVED: { type: "WALLET_ALERT", title: "Deposit Received", messageTemplate: "{{amount}} {{token}} has been deposited to your wallet." },
+  WITHDRAWAL_PROCESSED: { type: "WALLET_ALERT", title: "Withdrawal Processed", messageTemplate: "{{amount}} {{token}} has been withdrawn from your wallet." },
 };
 
 export function registerEventHooks() {

@@ -2,7 +2,7 @@ import { prisma } from "../../config/database";
 import { ENV } from "../../config/env";
 
 const FALLBACK_RATES: Record<string, Record<string, number>> = {
-  USDT: { USD: 1, HTG: 135.25, MXN: 17.5, NGN: 1550, PHP: 56.2 },
+  [ENV.APP_CURRENCY_TOKEN]: { USD: 1, HTG: 135.25, MXN: 17.5, NGN: 1550, PHP: 56.2 },
 };
 
 const CACHE_TTL_MS = 5 * 60 * 1000;

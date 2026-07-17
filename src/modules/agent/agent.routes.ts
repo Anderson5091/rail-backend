@@ -702,7 +702,7 @@ router.post("/:id/withdraw-wallet", authenticate, requireRole("AGENT_PARTNER", "
     }
 
     await agentService.walletWithdraw(String(req.params.id), Number(amount));
-    res.json({ success: true, message: `Successfully withdrew ${Number(amount)} USDT to hot treasury` });
+    res.json({ success: true, message: `Successfully withdrew ${Number(amount)} ${ENV.APP_CURRENCY_TOKEN} to hot treasury` });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Wallet withdraw failed";
     res.status(400).json({ error: message });

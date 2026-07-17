@@ -15,9 +15,7 @@ const chainMapping: Record<string, ChainType> = {
 };
 
 const TRON_CHAIN_ID = 728126428;
-const TRON_USDT_CONTRACT = "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t";
 const BASE_CHAIN_ID = 8453;
-const BASE_USDC_CONTRACT = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
 
 function randomHex(length: number): string {
   return crypto.randomBytes(Math.ceil(length / 2)).toString("hex").slice(0, length);
@@ -26,7 +24,7 @@ function randomHex(length: number): string {
 const REQUIRED_CONFIRMATIONS = 5;
 
 export class DepositService {
-  async createDepositRequest(userId: string, chain: string, token: string = "USDT") {
+  async createDepositRequest(userId: string, chain: string, token: string = ENV.APP_CURRENCY_TOKEN) {
     const network = chain.toUpperCase();
 
     if (network === "TRON") {
@@ -151,9 +149,9 @@ export class DepositService {
       user: "0x0000000000000000000000000000000000000000",
       recipient: hotWallet.address,
       originChainId: TRON_CHAIN_ID,
-      originCurrency: TRON_USDT_CONTRACT,
+      originCurrency: ENV.TRON_TOKEN_CONTRACT,
       destinationChainId: BASE_CHAIN_ID,
-      destinationCurrency: BASE_USDC_CONTRACT,
+      destinationCurrency: ENV.BASE_TOKEN_CONTRACT,
       amount: "1000000",
       tradeType: "EXACT_INPUT",
       useDepositAddress: true,

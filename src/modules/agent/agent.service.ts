@@ -3,6 +3,7 @@ import { ledgerService } from "../ledger/ledger.service";
 import { agentLedgerService } from "./agent-ledger.service";
 import { TransferOrchestrator } from "../transfer/transfer.orchestrator";
 import { feeService } from "../fees/fee.service";
+import { ENV } from "../../config/env";
 import { logger } from "../../utils/logger";
 import { generateReferenceNumber } from "../../utils/id-generator";
 import { crossmintService, type ChainType } from "../../services/crossmint.service";
@@ -116,7 +117,7 @@ export class AgentService {
 
     await this.recordKpi(agentId, usdtAmount, commission);
 
-    logger.info(`[Agent] Agent ${agentId} added ${netUsdt} USDT to user ${userId} (commission: ${commission})`);
+    logger.info(`[Agent] Agent ${agentId} added ${netUsdt} ${ENV.APP_CURRENCY_TOKEN} to user ${userId} (commission: ${commission})`);
     return tx;
   }
 
@@ -162,7 +163,7 @@ export class AgentService {
 
     await this.recordKpi(agentId, amount, commission);
 
-    logger.info(`[Agent] Agent ${agentId} withdrew ${amount} USDT for user ${userId} (commission: ${commission})`);
+    logger.info(`[Agent] Agent ${agentId} withdrew ${amount} ${ENV.APP_CURRENCY_TOKEN} for user ${userId} (commission: ${commission})`);
     return tx;
   }
 
@@ -260,7 +261,7 @@ export class AgentService {
 
     await this.recordKpi(agentId, payload.amount, commission);
 
-    logger.info(`[Agent] Agent ${agentId} transferred ${netAmount} USDT to beneficiary ${transfer.beneficiaryId} (debitUserWallet: ${!shouldDebitAgent})`);
+    logger.info(`[Agent] Agent ${agentId} transferred ${netAmount} ${ENV.APP_CURRENCY_TOKEN} to beneficiary ${transfer.beneficiaryId} (debitUserWallet: ${!shouldDebitAgent})`);
     return { agentTx, transfer };
   }
 
@@ -335,11 +336,11 @@ export class AgentService {
         },
       });
 
-      logger.info(`[Agent] Internal agent ${callerId} topped up partner ${partnerAgentId} with ${usdtAmount} USDT${totalFee > 0 ? ` (net: ${netAmount}, fee: ${totalFee})` : ""}`);
+      logger.info(`[Agent] Internal agent ${callerId} topped up partner ${partnerAgentId} with ${usdtAmount} ${ENV.APP_CURRENCY_TOKEN}${totalFee > 0 ? ` (net: ${netAmount}, fee: ${totalFee})` : ""}`);
       return tx;
     }
 
-    logger.info(`[Agent] ${callerRole} ${callerId} topped up partner ${partnerAgentId} with ${usdtAmount} USDT${totalFee > 0 ? ` (net: ${netAmount}, fee: ${totalFee})` : ""}`);
+    logger.info(`[Agent] ${callerRole} ${callerId} topped up partner ${partnerAgentId} with ${usdtAmount} ${ENV.APP_CURRENCY_TOKEN}${totalFee > 0 ? ` (net: ${netAmount}, fee: ${totalFee})` : ""}`);
     return { success: true, amount: netAmount, fee: totalFee, partnerAgentId };
   }
 
@@ -716,7 +717,7 @@ export class AgentService {
         },
       });
 
-      logger.info(`[Agent] Wallet withdraw ${amount} USDT from agent ${agentId} wallet to hot treasury: tx=${result.txHash}`);
+      logger.info(`[Agent] Wallet withdraw ${amount} ${ENV.APP_CURRENCY_TOKEN} from agent ${agentId} wallet to hot treasury: tx=${result.txHash}`);
     } catch (error) {
       logger.error(`[Agent] Crossmint wallet withdraw failed for agent ${agentId} wallet:`, error);
       throw new Error("Wallet withdrawal failed. Please try again.");
