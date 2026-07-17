@@ -7,6 +7,7 @@ import { treasuryRefillService } from "./treasury-refill.service";
 import { treasuryBootstrapService } from "./treasury-bootstrap.service";
 import { crossmintService } from "../../services/crossmint.service";
 import { extractBalance } from "../../utils/balance";
+import { logger } from "../../utils/logger";
 import type { Chain } from "@crossmint/wallets-sdk";
 
 const router = Router();
@@ -37,14 +38,14 @@ router.get("/overview", authenticate, async (_req: AuthRequest, res: Response) =
     for (const wallet of wallets) {
       const locator = wallet.walletLocator || wallet.address;
       if (!locator) continue;
-      crossmintService.getWalletBalance(locator, ["usdc", "usdt", "usdxm", ENV.APP_CURRENCY_TOKEN.toLowerCase()], wallet.chain as Chain)
+      crossmintService.getWalletBalance(locator, [ENV.APP_CURRENCY_TOKEN.toLowerCase()], wallet.chain as Chain)
         .then((balances) => {
-          const bal = extractBalance(balances, "usdc") || extractBalance(balances, "usdt") || extractBalance(balances, "usdxm") || extractBalance(balances, ENV.APP_CURRENCY_TOKEN.toLowerCase()) || 0;
+          const bal = extractBalance(balances, ENV.APP_CURRENCY_TOKEN.toLowerCase()) || 0;
           if (bal > 0) {
             return prisma.treasuryWallet.update({ where: { id: wallet.id }, data: { balance: bal, lastSync: new Date() } });
           }
         })
-        .catch(() => {});
+        .catch((err) => logger.error(`[Treasury] Crossmint sync failed for wallet ${wallet.id}: ${err}`));
     }
   } catch (error: any) {
     res.status(500).json({ error: `Failed to load treasury data: ${error.message}` });
@@ -97,10 +98,10 @@ router.get("/crossmint-balances", authenticate, requireRole("SUPER_ADMIN", "TREA
   const results = await Promise.allSettled(
     wallets.map(async (wallet: { walletLocator: string; chain: string; walletType: string; network: string; address: string }) => {
       const chain = wallet.chain as Chain;
-      const bal = await crossmintService.getWalletBalance(wallet.walletLocator, ["usdc", "usdt", "usdxm", ENV.APP_CURRENCY_TOKEN.toLowerCase()], chain);
+      const bal = await crossmintService.getWalletBalance(wallet.walletLocator, [ENV.APP_CURRENCY_TOKEN.toLowerCase()], chain);
       return {
         key: `${wallet.walletType}_${wallet.network}`,
-        data: { address: wallet.address, chain: wallet.chain, balance: extractBalance(bal, "usdc") || extractBalance(bal, "usdt") || extractBalance(bal, "usdxm") || extractBalance(bal, ENV.APP_CURRENCY_TOKEN.toLowerCase()) || 0, walletLocator: wallet.walletLocator },
+        data: { address: wallet.address, chain: wallet.chain, balance: extractBalance(bal, ENV.APP_CURRENCY_TOKEN.toLowerCase()) || 0, walletLocator: wallet.walletLocator },
       };
     })
   );
