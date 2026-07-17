@@ -86,7 +86,7 @@ export class WithdrawalService {
       where: { walletType: "HOT", chain: withdrawal.chain.toLowerCase() },
     });
 
-    if (!hotWallet?.address) {
+    if (!hotWallet?.walletLocator) {
       throw new Error("Hot treasury wallet not configured for this chain");
     }
 
@@ -95,7 +95,7 @@ export class WithdrawalService {
 
     try {
       const result = await crossmintService.sendTransfer(
-        hotWallet.address,
+        hotWallet.walletLocator,
         withdrawal.destinationAddress,
         ENV.APP_CURRENCY_TOKEN.toLowerCase(),
         withdrawal.netAmount.toString(),

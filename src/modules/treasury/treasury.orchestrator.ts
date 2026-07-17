@@ -1,6 +1,6 @@
 import { prisma } from "../../config/database";
 import { ENV } from "../../config/env";
-import { crossmintService, ChainType } from "../../services/crossmint.service";
+import { crossmintService } from "../../services/crossmint.service";
 import { extractBalance } from "../../utils/balance";
 import { logger } from "../../utils/logger";
 
@@ -18,10 +18,14 @@ export class TreasuryOrchestrator {
 
     if (!hot || !warm) throw new Error("Treasury wallets not found for network");
 
+    if (!hot.walletLocator || !warm.walletLocator) {
+      throw new Error("Wallets missing Crossmint locators");
+    }
+
     const hotBalances = await crossmintService.getWalletBalance(
       hot.address,
       [ENV.APP_CURRENCY_TOKEN.toLowerCase()],
-      chain as ChainType
+      chain
     );
 
     const hotBalance = extractBalance(hotBalances, ENV.APP_CURRENCY_TOKEN.toLowerCase());
@@ -35,8 +39,8 @@ export class TreasuryOrchestrator {
 
       const chainType = chain as "base" | "base-sepolia" | "ethereum" | "ethereum-sepolia" | "polygon" | "polygon-amoy" | "solana";
       const result = await crossmintService.internalTransfer(
-        warm.address,
-        hot.address,
+        warm.walletLocator,
+        hot.walletLocator!,
         ENV.APP_CURRENCY_TOKEN.toLowerCase(),
         refillAmount.toString(),
         chainType

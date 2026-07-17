@@ -50,18 +50,22 @@ export class TreasuryRefillService {
       where: { walletType: "WARM", chain },
     });
 
+    if (!hotWallet?.walletLocator) {
+      return;
+    }
+
     try {
       const hotBalances = await crossmintService.getWalletBalance(
         hotWallet.address,
         [ENV.APP_CURRENCY_TOKEN.toLowerCase()],
-        chain as ChainType
+        chain
       );
 
       const hotUsdtBalance = extractBalance(hotBalances, ENV.APP_CURRENCY_TOKEN.toLowerCase());
       const thresholdMin = Number(hotWallet.thresholdMin || ENV.HOT_THRESHOLD_MIN);
 
       if (hotUsdtBalance < thresholdMin) {
-        if (!warmWallet?.address) {
+        if (!warmWallet?.walletLocator) {
           logger.warn(`[TreasuryRefill] Hot balance low on ${chain} but no warm wallet available`);
           return;
         }
@@ -77,8 +81,8 @@ export class TreasuryRefillService {
 
         const chainType = chain as "base" | "base-sepolia" | "ethereum" | "ethereum-sepolia" | "polygon" | "polygon-amoy" | "solana";
         const result = await crossmintService.internalTransfer(
-          warmWallet.address,
-          hotWallet.address,
+          warmWallet.walletLocator,
+          hotWallet.walletLocator!,
           ENV.APP_CURRENCY_TOKEN.toLowerCase(),
           refillAmount.toString(),
           chainType
@@ -106,12 +110,12 @@ export class TreasuryRefillService {
         logger.info(`[TreasuryRefill] Hot treasury on ${chain} refilled: tx=${result.txHash}`);
       }
 
-      const warmUsdtBalance = warmWallet?.address
-        ? extractBalance(await crossmintService.getWalletBalance(warmWallet.address, [ENV.APP_CURRENCY_TOKEN.toLowerCase()], chain as ChainType), ENV.APP_CURRENCY_TOKEN.toLowerCase())
+      const warmUsdtBalance = warmWallet?.walletLocator
+        ? extractBalance(await crossmintService.getWalletBalance(warmWallet.address, [ENV.APP_CURRENCY_TOKEN.toLowerCase()], chain), ENV.APP_CURRENCY_TOKEN.toLowerCase())
         : 0;
 
       const warmThresholdMin = Number(warmWallet?.thresholdMin || ENV.WARM_THRESHOLD_MIN);
-      if (warmWallet?.address && warmUsdtBalance < warmThresholdMin) {
+      if (warmWallet?.walletLocator && warmUsdtBalance < warmThresholdMin) {
         logger.warn(`[TreasuryRefill] Warm balance on ${chain} is ${warmUsdtBalance} (min ${warmThresholdMin}). Manual cold wallet withdrawal required.`);
       }
     } catch (error) {

@@ -632,10 +632,12 @@ export class AgentService {
       const ledgerBalance = await agentLedgerService.getBalance(agentId);
       if (ledgerBalance < amount) throw new Error("Insufficient ledger balance");
 
+      if (!hotWallet.walletLocator) throw new Error("Hot treasury wallet locator not configured for this chain");
+
       let txResult;
       try {
         txResult = await crossmintService.sendTransfer(
-          hotWallet.address,
+          hotWallet.walletLocator,
           wallet.address,
           ENV.APP_CURRENCY_TOKEN.toLowerCase(),
           amount.toString(),

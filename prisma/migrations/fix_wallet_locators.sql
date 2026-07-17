@@ -1,3 +1,5 @@
--- Fix existing treasury wallet locators: replace me: prefixed alias locators
--- with the wallet's blockchain address (compatible with server-side API keys)
-UPDATE "TreasuryWallet" SET "walletLocator" = address WHERE "walletLocator" LIKE 'me:%';
+-- Fix existing treasury wallet locators: remove me: prefix from alias-based locators
+-- (server-side keys work with evm:smart:alias:<alias> format, but not with me: prefix)
+UPDATE "TreasuryWallet"
+SET "walletLocator" = SUBSTRING("walletLocator" FROM 4)
+WHERE "walletLocator" LIKE 'me:%';
