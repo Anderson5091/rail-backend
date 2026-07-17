@@ -125,12 +125,10 @@ class CrossmintService {
 
       const wallet = await this.walletsSdk.createWallet(params);
 
-      // Standard Crossmint locator format for COMPANY wallets:
-      // <chainType>:smart:alias:<alias> (if alias is provided)
       const chainStr = String(chain).toLowerCase();
       const chainType = chainStr.includes("solana") ? "solana" : "evm";
       const walletLocator = alias 
-        ? `${chainType}:smart:alias:${alias}`
+        ? `me:${chainType}:smart:alias:${alias}`
         : wallet.address;
 
       return {
