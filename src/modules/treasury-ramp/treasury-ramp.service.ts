@@ -130,8 +130,8 @@ export class TreasuryRampService {
     }
 
     const hotWallet = order.treasuryWallet;
-    if (!hotWallet?.walletLocator) {
-      throw new Error("Treasury wallet locator not found");
+    if (!hotWallet?.address) {
+      throw new Error("Treasury wallet not configured for this chain");
     }
 
     const mapping = CHAIN_MAP[order.chain.toUpperCase()];

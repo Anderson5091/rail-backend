@@ -297,7 +297,7 @@ export class DepositService {
       where: { walletType: "HOT", chain: depositRequest.chain.toLowerCase() },
     });
 
-    if (!hotWallet?.walletLocator) {
+    if (!hotWallet?.address) {
       throw new Error("Hot treasury wallet not configured for this chain");
     }
 

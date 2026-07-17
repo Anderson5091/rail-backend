@@ -1,6 +1,6 @@
 import { prisma } from "../../config/database";
 import { ENV } from "../../config/env";
-import { crossmintService } from "../../services/crossmint.service";
+import { crossmintService, ChainType } from "../../services/crossmint.service";
 import { extractBalance } from "../../utils/balance";
 import { logger } from "../../utils/logger";
 
@@ -50,21 +50,18 @@ export class TreasuryRefillService {
       where: { walletType: "WARM", chain },
     });
 
-    if (!hotWallet?.walletLocator) {
-      return;
-    }
-
     try {
       const hotBalances = await crossmintService.getWalletBalance(
-        hotWallet.walletLocator,
-        [ENV.APP_CURRENCY_TOKEN.toLowerCase()]
+        hotWallet.address,
+        [ENV.APP_CURRENCY_TOKEN.toLowerCase()],
+        chain as ChainType
       );
 
       const hotUsdtBalance = extractBalance(hotBalances, ENV.APP_CURRENCY_TOKEN.toLowerCase());
       const thresholdMin = Number(hotWallet.thresholdMin || ENV.HOT_THRESHOLD_MIN);
 
       if (hotUsdtBalance < thresholdMin) {
-        if (!warmWallet?.walletLocator) {
+        if (!warmWallet?.address) {
           logger.warn(`[TreasuryRefill] Hot balance low on ${chain} but no warm wallet available`);
           return;
         }
@@ -80,8 +77,8 @@ export class TreasuryRefillService {
 
         const chainType = chain as "base" | "base-sepolia" | "ethereum" | "ethereum-sepolia" | "polygon" | "polygon-amoy" | "solana";
         const result = await crossmintService.internalTransfer(
-          warmWallet.walletLocator,
-          hotWallet.walletLocator!,
+          warmWallet.address,
+          hotWallet.address,
           ENV.APP_CURRENCY_TOKEN.toLowerCase(),
           refillAmount.toString(),
           chainType
@@ -109,12 +106,12 @@ export class TreasuryRefillService {
         logger.info(`[TreasuryRefill] Hot treasury on ${chain} refilled: tx=${result.txHash}`);
       }
 
-      const warmUsdtBalance = warmWallet?.walletLocator
-        ? extractBalance(await crossmintService.getWalletBalance(warmWallet.walletLocator, [ENV.APP_CURRENCY_TOKEN.toLowerCase()]), ENV.APP_CURRENCY_TOKEN.toLowerCase())
+      const warmUsdtBalance = warmWallet?.address
+        ? extractBalance(await crossmintService.getWalletBalance(warmWallet.address, [ENV.APP_CURRENCY_TOKEN.toLowerCase()], chain as ChainType), ENV.APP_CURRENCY_TOKEN.toLowerCase())
         : 0;
 
       const warmThresholdMin = Number(warmWallet?.thresholdMin || ENV.WARM_THRESHOLD_MIN);
-      if (warmWallet?.walletLocator && warmUsdtBalance < warmThresholdMin) {
+      if (warmWallet?.address && warmUsdtBalance < warmThresholdMin) {
         logger.warn(`[TreasuryRefill] Warm balance on ${chain} is ${warmUsdtBalance} (min ${warmThresholdMin}). Manual cold wallet withdrawal required.`);
       }
     } catch (error) {

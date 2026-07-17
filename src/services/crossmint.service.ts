@@ -125,15 +125,9 @@ class CrossmintService {
 
       const wallet = await this.walletsSdk.createWallet(params);
 
-      const chainStr = String(chain).toLowerCase();
-      const chainType = chainStr.includes("solana") ? "solana" : "evm";
-      const walletLocator = alias 
-        ? `me:${chainType}:smart:alias:${alias}`
-        : wallet.address;
-
       return {
         crossmintWalletId: wallet.address,
-        walletLocator,
+        walletLocator: wallet.address,
         address: wallet.address,
         chain: String(chain),
         owner: wallet.owner,
