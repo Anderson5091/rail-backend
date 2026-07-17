@@ -23,9 +23,8 @@ export class TreasuryOrchestrator {
     }
 
     const hotBalances = await crossmintService.getWalletBalance(
-      hot.address,
-      [ENV.APP_CURRENCY_TOKEN.toLowerCase()],
-      chain
+      hot.walletLocator,
+      [ENV.APP_CURRENCY_TOKEN.toLowerCase()]
     );
 
     const hotBalance = extractBalance(hotBalances, ENV.APP_CURRENCY_TOKEN.toLowerCase());

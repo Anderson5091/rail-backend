@@ -36,7 +36,7 @@ router.get("/overview", authenticate, async (_req: AuthRequest, res: Response) =
 
     // Background: sync Crossmint balances (non-blocking, fire-and-forget)
     for (const wallet of wallets) {
-      const locator = wallet.address;
+      const locator = wallet.walletLocator || wallet.address;
       if (!locator) continue;
       crossmintService.getWalletBalance(locator, [ENV.APP_CURRENCY_TOKEN.toLowerCase()], wallet.chain as Chain)
         .then((balances) => {
@@ -98,7 +98,7 @@ router.get("/crossmint-balances", authenticate, requireRole("SUPER_ADMIN", "TREA
   const results = await Promise.allSettled(
     wallets.map(async (wallet: { walletLocator: string; chain: string; walletType: string; network: string; address: string }) => {
       const chain = wallet.chain as Chain;
-      const bal = await crossmintService.getWalletBalance(wallet.address, [ENV.APP_CURRENCY_TOKEN.toLowerCase()], chain);
+      const bal = await crossmintService.getWalletBalance(wallet.walletLocator, [ENV.APP_CURRENCY_TOKEN.toLowerCase()], chain);
       return {
         key: `${wallet.walletType}_${wallet.network}`,
         data: { address: wallet.address, chain: wallet.chain, balance: extractBalance(bal, ENV.APP_CURRENCY_TOKEN.toLowerCase()) || 0, walletLocator: wallet.walletLocator },

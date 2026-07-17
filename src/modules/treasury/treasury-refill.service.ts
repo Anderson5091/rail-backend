@@ -1,6 +1,6 @@
 import { prisma } from "../../config/database";
 import { ENV } from "../../config/env";
-import { crossmintService, ChainType } from "../../services/crossmint.service";
+import { crossmintService } from "../../services/crossmint.service";
 import { extractBalance } from "../../utils/balance";
 import { logger } from "../../utils/logger";
 
@@ -56,9 +56,8 @@ export class TreasuryRefillService {
 
     try {
       const hotBalances = await crossmintService.getWalletBalance(
-        hotWallet.address,
-        [ENV.APP_CURRENCY_TOKEN.toLowerCase()],
-        chain
+        hotWallet.walletLocator,
+        [ENV.APP_CURRENCY_TOKEN.toLowerCase()]
       );
 
       const hotUsdtBalance = extractBalance(hotBalances, ENV.APP_CURRENCY_TOKEN.toLowerCase());
@@ -111,7 +110,7 @@ export class TreasuryRefillService {
       }
 
       const warmUsdtBalance = warmWallet?.walletLocator
-        ? extractBalance(await crossmintService.getWalletBalance(warmWallet.address, [ENV.APP_CURRENCY_TOKEN.toLowerCase()], chain), ENV.APP_CURRENCY_TOKEN.toLowerCase())
+        ? extractBalance(await crossmintService.getWalletBalance(warmWallet.walletLocator, [ENV.APP_CURRENCY_TOKEN.toLowerCase()]), ENV.APP_CURRENCY_TOKEN.toLowerCase())
         : 0;
 
       const warmThresholdMin = Number(warmWallet?.thresholdMin || ENV.WARM_THRESHOLD_MIN);

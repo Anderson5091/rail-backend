@@ -233,32 +233,16 @@ class CrossmintService {
   }
 
   async getWalletBalance(
-    address: string,
+    locator: string,
     tokens: string[],
-    chain?: string
+    chain?: ChainType
   ) {
     await this.ensureInitialized();
-
-    const baseUrl = this.baseUrl;
-    const query = new URLSearchParams();
-    query.append("tokens", tokens.join(","));
-    query.append("chains", chain || "base");
-
-    const url = `${baseUrl}/api/2025-06-09/wallets/${address}/balances?${query}`;
-
-    try {
-      const response = await axios.get(url, {
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-key": ENV.CROSSMINT_API_KEY,
-        },
-      });
-      return response.data;
-    } catch (error: any) {
-      const detail = error.response?.data || error.message;
-      logger.error(`[Crossmint] Failed to get balance for ${address}:`, detail);
-      throw new Error(`Failed to get wallet balance: ${JSON.stringify(detail)}`);
-    }
+    const wallet = await this.walletsSdk.getWallet(locator, {
+      chain: chain || ("base" as ChainType),
+    });
+    const balances = await wallet.balances(tokens);
+    return balances;
   }
 
   private get baseUrl() {
