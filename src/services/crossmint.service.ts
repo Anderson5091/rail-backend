@@ -207,6 +207,7 @@ class CrossmintService {
   ) {
     await this.ensureInitialized();
     const wallet = await this.getWallet(fromWalletLocator, chain);
+    (wallet as any).useSigner?.({ type: "server", secret: ENV.WALLET_SIGNER_SECRET });
     const tx = await wallet.send(toAddress, token, amount);
     return {
       txHash: tx.hash,
@@ -227,6 +228,7 @@ class CrossmintService {
       this.getWallet(fromWalletLocator, chain),
       this.getWallet(toWalletLocator, chain),
     ]);
+    (wallet as any).useSigner?.({ type: "server", secret: ENV.WALLET_SIGNER_SECRET });
     const tx = await wallet.send(toWallet.address, token, amount);
     return {
       txHash: tx.hash,
