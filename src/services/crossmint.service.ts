@@ -62,7 +62,7 @@ export interface OrderStatusResponse {
 }
 
 export type ChainType = Chain;
-export type WalletType = "HOT" | "WARM" | "COLD" | "DEPOSIT" | "REVENUE" | "AGENT";
+export type WalletType = "HOT" | "WARM" | "COLD" | "DEPOSIT" | "AGENT";
 
 export interface CrossmintWalletResult {
   crossmintWalletId: string;
@@ -97,7 +97,7 @@ class CrossmintService {
 
   async createTreasuryWallet(
     chain: ChainType,
-    type: "HOT" | "WARM" | "COLD" | "REVENUE",
+    type: "HOT" | "WARM" | "COLD",
     alias?: string
   ): Promise<CrossmintWalletResult> {
     const owner = "COMPANY";

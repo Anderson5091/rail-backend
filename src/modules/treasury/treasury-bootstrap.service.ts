@@ -1,16 +1,14 @@
 import { prisma } from "../../config/database";
 import { ENV } from "../../config/env";
-import { crossmintService, type ChainType, type WalletType } from "../../services/crossmint.service";
+import { crossmintService, type ChainType } from "../../services/crossmint.service";
 import { logger } from "../../utils/logger";
 
 interface TreasuryWalletConfig {
-  walletType: WalletType;
+  walletType: "HOT" | "WARM" | "COLD" | "DEPOSIT";
   chain: ChainType;
   network: string;
   thresholdMin?: number;
 }
-
-const REVENUE_CHAIN: ChainType = ENV.TREASURY_CHAIN as ChainType;
 
 export class TreasuryBootstrapService {
   async bootstrapTreasuryWallets() {
@@ -68,47 +66,11 @@ export class TreasuryBootstrapService {
       }
     }
 
-    await this.bootstrapRevenueWallet();
-
     if (createdCount === 0 && errors.length > 0) {
       throw new Error(`Treasury bootstrap failed: ${errors.join("; ")}`);
     }
 
     logger.info(`[TreasuryBootstrap] Treasury wallet bootstrap complete. Created: ${createdCount}, Errors: ${errors.length}`);
-  }
-
-  private async bootstrapRevenueWallet() {
-    const existing = await prisma.treasuryWallet.findFirst({
-      where: { walletType: "REVENUE" },
-    });
-
-    if (existing) {
-      logger.info(`[TreasuryBootstrap] REVENUE wallet exists: ${existing.address}`);
-      return;
-    }
-
-    const chains = ENV.NETWORK_CHAIN;
-    const networks = ENV.SUPPORTED_NETWORKS;
-    const idx = chains.indexOf(REVENUE_CHAIN);
-    const revenueNetwork = idx >= 0 ? networks[idx] : REVENUE_CHAIN.toUpperCase();
-
-    const alias = `treasury_revenue_${REVENUE_CHAIN.toLowerCase()}`;
-    const created = await crossmintService.createTreasuryWallet(REVENUE_CHAIN, "REVENUE", alias);
-
-    await prisma.treasuryWallet.create({
-      data: {
-        walletType: "REVENUE",
-        chain: REVENUE_CHAIN,
-        network: revenueNetwork,
-        address: created.address,
-        crossmintWalletId: created.crossmintWalletId,
-        walletLocator: created.walletLocator,
-        status: "ACTIVE",
-      },
-    });
-
-    logger.info(`[TreasuryBootstrap] Created REVENUE wallet: ${created.address}`);
-  }
-}
+  }}
 
 export const treasuryBootstrapService = new TreasuryBootstrapService();
