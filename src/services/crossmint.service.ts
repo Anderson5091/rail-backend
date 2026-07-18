@@ -223,8 +223,11 @@ class CrossmintService {
     chain: ChainType
   ) {
     await this.ensureInitialized();
-    const wallet = await this.getWallet(fromWalletLocator, chain);
-    const tx = await wallet.send(toWalletLocator, token, amount);
+    const [wallet, toWallet] = await Promise.all([
+      this.getWallet(fromWalletLocator, chain),
+      this.getWallet(toWalletLocator, chain),
+    ]);
+    const tx = await wallet.send(toWallet.address, token, amount);
     return {
       txHash: tx.hash,
       explorerLink: tx.explorerLink,
