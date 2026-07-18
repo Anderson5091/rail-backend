@@ -87,6 +87,11 @@ export class TreasuryBootstrapService {
       return;
     }
 
+    const chains = ENV.NETWORK_CHAIN;
+    const networks = ENV.SUPPORTED_NETWORKS;
+    const idx = chains.indexOf(REVENUE_CHAIN);
+    const revenueNetwork = idx >= 0 ? networks[idx] : REVENUE_CHAIN.toUpperCase();
+
     const alias = `treasury_revenue_${REVENUE_CHAIN.toLowerCase()}`;
     const created = await crossmintService.createTreasuryWallet(REVENUE_CHAIN, "REVENUE", alias);
 
@@ -94,7 +99,7 @@ export class TreasuryBootstrapService {
       data: {
         walletType: "REVENUE",
         chain: REVENUE_CHAIN,
-        network: REVENUE_CHAIN.toUpperCase(),
+        network: revenueNetwork,
         address: created.address,
         crossmintWalletId: created.crossmintWalletId,
         walletLocator: created.walletLocator,
