@@ -10,6 +10,7 @@ const prismaRaw = new PrismaClient({
 });
 
 export interface ExtendedPrismaClient extends PrismaClient {
+  $transaction: any;
   depositRequest: any;
   depositWallet: any;
   withdrawal: any;
@@ -26,6 +27,7 @@ export interface ExtendedPrismaClient extends PrismaClient {
   treasuryOnrampTransfer: any;
   agentCashRequest: any;
   agentSettlement: any;
+  systemObligation: any;
 }
 
 const xprisma = (prismaRaw as any).$extends({

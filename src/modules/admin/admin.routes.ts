@@ -5,6 +5,7 @@ import { prisma } from "../../config/database";
 import { ENV } from "../../config/env";
 import { authenticate, AuthRequest, requireRole } from "../../middleware/auth";
 import { ledgerService } from "../ledger/ledger.service";
+import { liquidityEnforcer } from "../liquidity/liquidity-enforcer.service";
 
 const router = Router();
 
@@ -32,6 +33,28 @@ router.get("/dashboard", authenticate, requireRole("SUPER_ADMIN", "ADMIN", "COMP
     prisma.user.count({ where: { kycTier: 3 } }),
   ]);
 
+  const liquidityAlerts: Array<{ id: string; severity: "CRITICAL" | "HIGH" | "MEDIUM" | "LOW"; message: string; timestamp: Date }> = [];
+  try {
+    const solvency = await liquidityEnforcer.getSolvencyReport();
+    if (!solvency.healthy) {
+      liquidityAlerts.push({
+        id: "liquidity-solvency",
+        severity: "CRITICAL",
+        message: `Insufficient platform liquidity. Obligation ($${solvency.totalObligation.toLocaleString()}) exceeds HOT+WARM ($${solvency.hotWarmTotal.toLocaleString()}). Contact treasury.`,
+        timestamp: new Date(),
+      });
+    } else if (solvency.availableLiquidity < solvency.hotWarmTotal * 0.1) {
+      liquidityAlerts.push({
+        id: "liquidity-low",
+        severity: "HIGH",
+        message: `Low liquidity buffer. Available: $${solvency.availableLiquidity.toLocaleString()}. Contact treasury if more funds are needed.`,
+        timestamp: new Date(),
+      });
+    }
+  } catch (_err) {
+    // solvency check non-blocking
+  }
+
   res.json({
     totalUsers,
     activeUsers,
@@ -50,12 +73,15 @@ router.get("/dashboard", authenticate, requireRole("SUPER_ADMIN", "ADMIN", "COMP
     pendingReconciliation,
     discrepancyReconciliation,
     kycTiers: { tier1: tier1Count, tier2: tier2Count, tier3: tier3Count },
-    alerts: alerts.map((a: { id: string; severity: string; message: string | null; createdAt: Date }) => ({
-      id: a.id,
-      severity: a.severity as "CRITICAL" | "HIGH" | "MEDIUM" | "LOW",
-      message: a.message || "",
-      timestamp: a.createdAt,
-    })),
+    alerts: [
+      ...liquidityAlerts,
+      ...alerts.map((a: { id: string; severity: string; message: string | null; createdAt: Date }) => ({
+        id: a.id,
+        severity: a.severity as "CRITICAL" | "HIGH" | "MEDIUM" | "LOW",
+        message: a.message || "",
+        timestamp: a.createdAt,
+      })),
+    ],
     recentActivity: recentActivity.map((r: { id: string; action: string; entity: string | null; adminId: string; createdAt: Date }) => ({
       id: r.id,
       action: r.action,

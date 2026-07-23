@@ -3,6 +3,7 @@ import { ledgerService } from "../ledger/ledger.service";
 import { agentLedgerService } from "./agent-ledger.service";
 import { TransferOrchestrator } from "../transfer/transfer.orchestrator";
 import { feeService } from "../fees/fee.service";
+import { liquidityEnforcer } from "../liquidity/liquidity-enforcer.service";
 import { ENV } from "../../config/env";
 import { logger } from "../../utils/logger";
 import { generateReferenceNumber } from "../../utils/id-generator";
@@ -69,6 +70,8 @@ export class AgentService {
 
     const commission = (usdtAmount * commissionPercent) / 100;
     const netUsdt = usdtAmount - commission;
+
+    await liquidityEnforcer.ensureLiquidity(netUsdt);
 
     if (agent.type === "INTERNAL") {
       const hotWallet = await prisma.treasuryWallet.findFirst({ where: { walletType: "HOT" } });
@@ -201,12 +204,10 @@ export class AgentService {
     const shouldDebitAgent = !payload.debitUserWallet || !payload.userId;
 
     if (shouldDebitAgent) {
+      await liquidityEnforcer.ensureLiquidity(netAmount);
       if (agent.type === "INTERNAL") {
         const hotWallet = await prisma.treasuryWallet.findFirst({ where: { walletType: "HOT" } });
         if (!hotWallet) throw new Error("System hot treasury not found");
-        if (Number(hotWallet.balance) < netAmount) {
-          throw new Error("Insufficient system treasury balance");
-        }
         await prisma.treasuryWallet.update({
           where: { id: hotWallet.id },
           data: { balance: { decrement: netAmount } },
@@ -286,13 +287,12 @@ export class AgentService {
     const { totalFee } = await feeService.calculateAgentTopupFee(usdtAmount);
     const netAmount = usdtAmount - totalFee;
 
+    await liquidityEnforcer.ensureLiquidity(usdtAmount);
+
     const hotWallet = await prisma.treasuryWallet.findFirst({
       where: { walletType: "HOT" },
     });
     if (!hotWallet) throw new Error("System hot treasury not found");
-    if (Number(hotWallet.balance) < usdtAmount) {
-      throw new Error("Insufficient system treasury balance");
-    }
 
     const partner = await prisma.agent.findUnique({
       where: { id: partnerAgentId },
@@ -594,6 +594,8 @@ export class AgentService {
     if (direction === "TO_LEDGER") {
       const available = Number(wallet.balance);
       if (available < amount) throw new Error("Insufficient wallet balance");
+
+      await liquidityEnforcer.ensureLiquidity(amount);
 
       let txResult;
       try {

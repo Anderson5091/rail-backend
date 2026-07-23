@@ -2,6 +2,7 @@ import { prisma } from "../../config/database";
 import { ENV } from "../../config/env";
 import { crossmintService, type ChainType } from "../../services/crossmint.service";
 import { ledgerService } from "../ledger/ledger.service";
+import { liquidityEnforcer } from "../liquidity/liquidity-enforcer.service";
 import { logger } from "../../utils/logger";
 
 const CHAIN_MAP: Record<string, ChainType> = {
@@ -39,6 +40,8 @@ export class WithdrawalService {
       params.amount,
       `withdrawal_${Date.now()}`
     );
+
+    await liquidityEnforcer.updateObligation(0, 0, params.amount);
 
     const withdrawal = await prisma.withdrawal.create({
       data: {
@@ -111,6 +114,8 @@ export class WithdrawalService {
         },
       });
 
+      await liquidityEnforcer.updateObligation(0, 0, -Number(withdrawal.amount));
+
       await prisma.walletTransaction.updateMany({
         where: {
           walletId: withdrawal.walletId!,
@@ -127,6 +132,8 @@ export class WithdrawalService {
 
       return result;
     } catch (error) {
+      await liquidityEnforcer.updateObligation(0, 0, -Number(withdrawal.amount));
+
       await prisma.withdrawal.update({
         where: { id: withdrawalId },
         data: { status: "FAILED" },

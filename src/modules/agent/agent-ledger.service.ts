@@ -11,16 +11,33 @@ export class AgentLedgerService {
     reference?: string,
     comment?: string
   ) {
-    return prisma.agentLedgerEntry.create({
-      data: {
-        agentId,
-        type: "CREDIT",
-        category,
-        amount,
-        reference,
-        comment,
-        uniqueKey: reference ? `agent_credit_${reference}` : undefined,
-      },
+    return prisma.$transaction(async (tx: any) => {
+      const entry = await tx.agentLedgerEntry.create({
+        data: {
+          agentId,
+          type: "CREDIT",
+          category,
+          amount,
+          reference,
+          comment,
+          uniqueKey: reference ? `agent_credit_${reference}` : undefined,
+        },
+      });
+
+      await tx.systemObligation.upsert({
+        where: { id: "singleton" },
+        create: {
+          id: "singleton",
+          userLedgerObligation: 0,
+          agentLedgerObligation: amount,
+          pendingObligation: 0,
+        },
+        update: {
+          agentLedgerObligation: { increment: amount },
+        },
+      });
+
+      return entry;
     });
   }
 
@@ -31,16 +48,33 @@ export class AgentLedgerService {
     reference?: string,
     comment?: string
   ) {
-    return prisma.agentLedgerEntry.create({
-      data: {
-        agentId,
-        type: "DEBIT",
-        category,
-        amount,
-        reference,
-        comment,
-        uniqueKey: reference ? `agent_debit_${reference}` : undefined,
-      },
+    return prisma.$transaction(async (tx: any) => {
+      const entry = await tx.agentLedgerEntry.create({
+        data: {
+          agentId,
+          type: "DEBIT",
+          category,
+          amount,
+          reference,
+          comment,
+          uniqueKey: reference ? `agent_debit_${reference}` : undefined,
+        },
+      });
+
+      await tx.systemObligation.upsert({
+        where: { id: "singleton" },
+        create: {
+          id: "singleton",
+          userLedgerObligation: 0,
+          agentLedgerObligation: -amount,
+          pendingObligation: 0,
+        },
+        update: {
+          agentLedgerObligation: { decrement: amount },
+        },
+      });
+
+      return entry;
     });
   }
 

@@ -7,6 +7,7 @@ import { treasuryRefillService } from "./treasury-refill.service";
 import { treasuryBootstrapService } from "./treasury-bootstrap.service";
 import { crossmintService } from "../../services/crossmint.service";
 import { extractBalance } from "../../utils/balance";
+import { liquidityEnforcer } from "../liquidity/liquidity-enforcer.service";
 import { logger } from "../../utils/logger";
 import type { Chain } from "@crossmint/wallets-sdk";
 
@@ -61,6 +62,15 @@ router.get("/liquidity", authenticate, async (_req: AuthRequest, res: Response) 
   const wallets = await prisma.treasuryWallet.findMany();
 
   res.json({ snapshots, wallets });
+});
+
+router.get("/solvency", authenticate, requireRole("SUPER_ADMIN", "ADMIN", "TREASURY", "OPS"), async (_req: AuthRequest, res: Response) => {
+  try {
+    const report = await liquidityEnforcer.getSolvencyReport();
+    res.json(report);
+  } catch (error: any) {
+    res.status(500).json({ error: `Failed to get solvency report: ${error.message}` });
+  }
 });
 
 router.post("/rebalance", authenticate, requireRole("SUPER_ADMIN", "TREASURY"), async (req: AuthRequest, res: Response) => {

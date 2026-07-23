@@ -1,6 +1,7 @@
 import { crossmintService } from "../../services/crossmint.service";
 import { treasuryBootstrapService } from "./treasury-bootstrap.service";
 import { treasuryRefillService } from "./treasury-refill.service";
+import { liquidityEnforcer } from "../liquidity/liquidity-enforcer.service";
 import { logger } from "../../utils/logger";
 
 export async function initializeTreasuryInfrastructure() {
@@ -10,6 +11,9 @@ export async function initializeTreasuryInfrastructure() {
 
     logger.info("[TreasuryInit] Bootstrapping treasury wallets...");
     await treasuryBootstrapService.bootstrapTreasuryWallets();
+
+    logger.info("[TreasuryInit] Recalibrating system obligation...");
+    await liquidityEnforcer.recalibrate();
 
     logger.info("[TreasuryInit] Starting treasury refill engine...");
     treasuryRefillService.start();

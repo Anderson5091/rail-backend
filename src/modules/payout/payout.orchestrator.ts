@@ -4,6 +4,7 @@ import { getAdapter } from "../partners/adapters/index";
 import { partnerRepository } from "../partners/registry/partner.repository";
 import { slaMonitorService } from "../partners/sla/sla-monitor.service";
 import { ledgerService } from "../ledger/ledger.service";
+import { liquidityEnforcer } from "../liquidity/liquidity-enforcer.service";
 import { logger } from "../../utils/logger";
 
 export class PayoutOrchestrator {
@@ -86,6 +87,8 @@ export class PayoutOrchestrator {
           where: { id: transfer.id },
           data: { status: "COMPLETED" },
         });
+
+        await liquidityEnforcer.updateObligation(0, 0, -transfer.amount);
       }
 
       return { ...order, partner: routing.partner.name, externalReference: response.externalReference };
@@ -125,6 +128,8 @@ export class PayoutOrchestrator {
             data: { status: "FAILED" },
           });
         }
+
+        await liquidityEnforcer.updateObligation(0, 0, -transfer.amount);
       } catch (revertErr) {
         logger.error(`[PAYOUT] Failed to revert funds for transfer ${transfer.id}:`, revertErr);
       }

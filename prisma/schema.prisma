@@ -688,3 +688,11 @@ model FeeConfig {
   updatedAt            DateTime @updatedAt
   createdAt            DateTime @default(now())
 }
+
+model SystemObligation {
+  id                    String   @id @default("singleton")
+  userLedgerObligation  Decimal  @default(0) @db.Decimal(24, 8)
+  agentLedgerObligation Decimal  @default(0) @db.Decimal(24, 8)
+  pendingObligation     Decimal  @default(0) @db.Decimal(24, 8)
+  updatedAt             DateTime @updatedAt
+}

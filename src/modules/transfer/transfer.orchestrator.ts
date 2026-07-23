@@ -1,6 +1,7 @@
 import { prisma } from "../../config/database";
 import { lockService } from "../../services/lock.service";
 import { ledgerService } from "../ledger/ledger.service";
+import { liquidityEnforcer } from "../liquidity/liquidity-enforcer.service";
 import { eventEmitter } from "../events/event.emitter";
 import { logger } from "../../utils/logger";
 import { generateTransactionNumber, generateReferenceNumber } from "../../utils/id-generator";
@@ -112,6 +113,8 @@ export class TransferOrchestrator {
         });
       });
     }
+
+    await liquidityEnforcer.updateObligation(0, 0, input.amount);
 
     await eventEmitter.emit("TRANSFER_CREATED", {
       eventType: "TRANSFER_CREATED",
