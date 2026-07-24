@@ -32,7 +32,7 @@ const AGENTS = [
     fullName: "John Partner",
     type: "PARTNER",
     wallets: [
-      { walletType: "BASE_TREASURY", balance: 100000 },
+
     ],
   },
   {
@@ -147,22 +147,6 @@ async function main() {
       },
     });
     console.log(`Created ${tw.walletType} treasury wallet on ${tw.network}: ${tw.address}`);
-  }
-
-  // Seed SystemObligation (idempotent)
-  const existingObligation = await prisma.systemObligation.findUnique({ where: { id: "singleton" } });
-  if (!existingObligation) {
-    await prisma.systemObligation.create({
-      data: {
-        id: "singleton",
-        userLedgerObligation: 0,
-        agentLedgerObligation: 0,
-        pendingObligation: 0,
-      },
-    });
-    console.log("SystemObligation row created");
-  } else {
-    console.log("SystemObligation row already exists — skipping");
   }
 }
 

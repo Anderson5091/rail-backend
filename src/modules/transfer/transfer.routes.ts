@@ -23,10 +23,10 @@ router.post("/quote", async (req: AuthRequest, res: Response) => {
   const { amount, currency, country, method, accountCurrency } = req.body;
   const destCurrency = currency || await fxService.resolveCurrency(country, method, accountCurrency);
   const fxRate = await fxService.getRate(ENV.APP_CURRENCY_TOKEN, destCurrency);
-  const { fee } = await feeService.calculate(country, method, amount);
-  const destinationAmount = (amount - fee) * fxRate;
+  const { totalFee } = await feeService.calculateTransferFee(amount);
+  const destinationAmount = (amount - totalFee) * fxRate;
 
-  res.json({ amount, fee, fxRate, destinationAmount, currency: destCurrency });
+  res.json({ amount, fee: totalFee, fxRate, destinationAmount, currency: destCurrency });
 });
 
 router.post("/", authenticate, idempotencyMiddleware, async (req: AuthRequest, res: Response) => {

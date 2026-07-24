@@ -26,6 +26,8 @@ interface CreateTransferInput {
   userId?: string;
   skipWalletDebit?: boolean;
   country?: string;
+  fee?: number;
+  feeTransactionType?: string;
 }
 
 export class TransferOrchestrator {
@@ -53,7 +55,21 @@ export class TransferOrchestrator {
     if (!beneficiaryId) throw new Error("Beneficiary ID or inline beneficiary details are required");
 
     const country = input.country || (input.beneficiary?.country) || "";
-    const { fee } = await feeService.calculate(country, input.payoutMethod, input.amount);
+    let fee: number;
+    if (input.fee !== undefined) {
+      fee = input.fee;
+    } else {
+      const feeConfigResult = await feeService.calculateByTransactionType(
+        input.feeTransactionType || "WEB_TRANSFER",
+        input.amount
+      );
+      if (feeConfigResult.totalFee > 0) {
+        fee = feeConfigResult.totalFee;
+      } else {
+        const legacyFee = await feeService.calculate(country, input.payoutMethod, input.amount);
+        fee = legacyFee.fee;
+      }
+    }
     const destinationAmount = input.amount - fee;
 
     const currency = input.currency || "USD";

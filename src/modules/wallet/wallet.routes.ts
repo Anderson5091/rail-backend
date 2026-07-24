@@ -5,6 +5,7 @@ import { authenticate, AuthRequest } from "../../middleware/auth";
 import { depositService } from "../deposit/deposit.service";
 import { ENV } from "../../config/env";
 import { ledgerService } from "../ledger/ledger.service";
+import { feeService } from "../fees/fee.service";
 import { lockService } from "../../services/lock.service";
 import { generateTransactionNumber } from "../../utils/id-generator";
 
@@ -167,18 +168,21 @@ router.post("/internal-transfer", authenticate, async (req: AuthRequest, res: Re
   const recipientWallet = await prisma.wallet.findFirst({ where: { userId: recipient.id } });
   if (!recipientWallet) return res.status(400).json({ error: "Recipient wallet not found" });
 
+  const { totalFee: p2pFee } = await feeService.calculateP2pFee(amountNum);
+  const totalDebit = amountNum + p2pFee;
+
   const txRef = generateTransactionNumber();
 
   const result = await lockService.withLock(`wallet:${senderWallet.id}`, async () => {
     const balance = await ledgerService.getBalance(senderWallet.id);
-    if (balance < amountNum) throw new Error("Insufficient balance");
+    if (balance < totalDebit) throw new Error("Insufficient balance");
 
     await (prisma as any).$transaction(async (tx: any) => {
       await tx.ledgerEntry.create({
         data: {
           walletId: senderWallet.id,
           type: "DEBIT",
-          amount: amountNum,
+          amount: totalDebit,
           reference: txRef,
           uniqueKey: `debit_${txRef}`,
         },
@@ -194,6 +198,17 @@ router.post("/internal-transfer", authenticate, async (req: AuthRequest, res: Re
         },
       });
 
+      await tx.systemObligation.upsert({
+        where: { id: "singleton" },
+        create: {
+          id: "singleton",
+          userLedgerObligation: 0,
+          agentLedgerObligation: 0,
+          pendingObligation: 0,
+        },
+        update: { userLedgerObligation: { decrement: p2pFee } },
+      });
+
       await tx.walletTransaction.create({
         data: {
           walletId: senderWallet.id,
@@ -201,6 +216,7 @@ router.post("/internal-transfer", authenticate, async (req: AuthRequest, res: Re
           amount: amountNum,
           status: "COMPLETED",
           transactionNumber: txRef,
+          metadata: { p2pFee },
         },
       });
 

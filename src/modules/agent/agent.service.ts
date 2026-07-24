@@ -69,16 +69,14 @@ export class AgentService {
     if (!agent) throw new Error("Agent not found");
 
     const commission = (usdtAmount * commissionPercent) / 100;
-    const netUsdt = usdtAmount - commission;
+    const { totalFee: systemFee } = await feeService.calculateAgentDepositFee(usdtAmount);
+    const netUsdt = usdtAmount - commission - systemFee;
 
     await liquidityEnforcer.ensureLiquidity(netUsdt);
 
     if (agent.type === "INTERNAL") {
       const hotWallet = await prisma.treasuryWallet.findFirst({ where: { walletType: "HOT" } });
       if (!hotWallet) throw new Error("System hot treasury not found");
-      if (Number(hotWallet.balance) < netUsdt) {
-        throw new Error("Insufficient system treasury balance");
-      }
       await prisma.treasuryWallet.update({
         where: { id: hotWallet.id },
         data: { balance: { decrement: netUsdt } },
@@ -114,13 +112,13 @@ export class AgentService {
         userRef: userId,
         status: "COMPLETED",
         reference: generateReferenceNumber(),
-        metadata: { fiatAmount, commissionPercent },
+        metadata: { fiatAmount, commissionPercent, systemFee },
       },
     });
 
     await this.recordKpi(agentId, usdtAmount, commission);
 
-    logger.info(`[Agent] Agent ${agentId} added ${netUsdt} ${ENV.APP_CURRENCY_TOKEN} to user ${userId} (commission: ${commission})`);
+    logger.info(`[Agent] Agent ${agentId} added ${netUsdt} ${ENV.APP_CURRENCY_TOKEN} to user ${userId} (commission: ${commission}, systemFee: ${systemFee})`);
     return tx;
   }
 
@@ -138,7 +136,8 @@ export class AgentService {
     if (!agent) throw new Error("Agent not found");
 
     const commission = (amount * commissionPercent) / 100;
-    const netAmount = amount - commission;
+    const { totalFee: systemFee } = await feeService.calculateAgentCashWithdrawFee(amount);
+    const netAmount = amount - commission - systemFee;
 
     const userWallet = await prisma.wallet.findFirst({ where: { userId } });
     if (!userWallet) throw new Error("User wallet not found");
@@ -148,7 +147,7 @@ export class AgentService {
 
     await ledgerService.debit(userWallet.id, amount, `agent_withdraw_${agentId}_${Date.now()}`);
 
-    await agentLedgerService.credit(agentId, amount, "WITHDRAW", `withdraw_${agentId}_${Date.now()}`, `From user ${userId}`);
+    await agentLedgerService.credit(agentId, netAmount, "WITHDRAW", `withdraw_${agentId}_${Date.now()}`, `From user ${userId}`);
 
     const tx = await prisma.agentTransaction.create({
       data: {
@@ -160,13 +159,13 @@ export class AgentService {
         userRef: userId,
         status: "COMPLETED",
         reference: generateReferenceNumber(),
-        metadata: { fiatEquivalent: netAmount, destinationType: destinationType || "OFFCHAIN" },
+        metadata: { fiatEquivalent: netAmount, destinationType: destinationType || "OFFCHAIN", systemFee },
       },
     });
 
     await this.recordKpi(agentId, amount, commission);
 
-    logger.info(`[Agent] Agent ${agentId} withdrew ${amount} ${ENV.APP_CURRENCY_TOKEN} for user ${userId} (commission: ${commission})`);
+    logger.info(`[Agent] Agent ${agentId} withdrew ${amount} ${ENV.APP_CURRENCY_TOKEN} for user ${userId} (commission: ${commission}, systemFee: ${systemFee})`);
     return tx;
   }
 
@@ -199,7 +198,8 @@ export class AgentService {
     if (!agent) throw new Error("Agent not found");
 
     const commission = (payload.amount * payload.commissionPercent) / 100;
-    const netAmount = payload.amount - commission;
+    const { totalFee: systemFee } = await feeService.calculateAgentTransferFee(payload.amount);
+    const netAmount = payload.amount - commission - systemFee;
 
     const shouldDebitAgent = !payload.debitUserWallet || !payload.userId;
 
@@ -237,6 +237,7 @@ export class AgentService {
       beneficiary: payload.beneficiary,
       currency: payload.currency,
       skipWalletDebit: shouldDebitAgent,
+      fee: systemFee,
     });
 
     const agentTx = await prisma.agentTransaction.create({
@@ -256,6 +257,7 @@ export class AgentService {
           senderAgentId: agentId,
           senderAgentEmail: agent.email,
           debitUserWallet: !shouldDebitAgent,
+          systemFee,
         },
       },
     });

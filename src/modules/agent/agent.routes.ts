@@ -8,6 +8,7 @@ import { agentLedgerService } from "./agent-ledger.service";
 import { generateReferenceNumber } from "../../utils/id-generator";
 import { crossmintService } from "../../services/crossmint.service";
 import { ledgerService } from "../ledger/ledger.service";
+import { feeService } from "../fees/fee.service";
 import { fxService } from "../fx/fx.service";
 import { logger } from "../../utils/logger";
 import type { ChainType } from "../../services/crossmint.service";
@@ -391,9 +392,11 @@ router.post("/:id/process-payout", authenticate, requireRole("AGENT_PARTNER", "A
     if (balance < Number(amount)) return res.status(400).json({ error: "Insufficient user balance" });
 
     const commission = (Number(amount) * Number(commissionPercent || 0)) / 100;
-    const netAmount = Number(amount) - commission;
+    const { totalFee: systemFee } = await feeService.calculatePayoutFee(Number(amount));
+    const grossAmount = Number(amount);
+    const netAmount = grossAmount - commission - systemFee;
 
-    await ledgerService.debit(wallet.id, Number(amount), `agent_payout_${agentId}_${Date.now()}`);
+    await ledgerService.debit(wallet.id, grossAmount, `agent_payout_${agentId}_${Date.now()}`);
 
     if (commission > 0) {
       await agentLedgerService.credit(agentId, commission, "COMMISSION", `payout_commission_${agentId}_${Date.now()}`, `Payout commission for user ${userId}`);
@@ -445,17 +448,17 @@ router.post("/:id/process-payout", authenticate, requireRole("AGENT_PARTNER", "A
       data: {
         agentId,
         type: "PAYOUT",
-        amount: Number(amount),
+        amount: grossAmount,
         commission,
         netAmount,
         userRef: userId,
         status: "COMPLETED",
         reference: generateReferenceNumber(),
-        metadata: { payoutMethod, beneficiaryId },
+        metadata: { payoutMethod, beneficiaryId, systemFee },
       },
     });
 
-    await agentService.recordKpi(agentId, Number(amount), commission);
+    await agentService.recordKpi(agentId, grossAmount, commission);
 
     res.json(agentTx);
   } catch (err: unknown) {
