@@ -1,10 +1,18 @@
 import { prisma } from "../../config/database";
 
 export class FeeService {
-  async calculate(country: string, method: string, amount: number) {
+  private async findRule(country: string, method: string) {
     const rule = await prisma.feeRule.findFirst({
       where: { country, payoutMethod: method },
     });
+    if (rule) return rule;
+    return prisma.feeRule.findFirst({
+      where: { country, payoutMethod: "ALL" },
+    });
+  }
+
+  async calculate(country: string, method: string, amount: number) {
+    const rule = await this.findRule(country, method);
 
     if (rule) {
       return {
@@ -101,9 +109,7 @@ export class FeeService {
   }
 
   async calculateCrossBorderFee(country: string, payoutMethod: string, amount: number) {
-    const rule = await prisma.feeRule.findFirst({
-      where: { country, payoutMethod },
-    });
+    const rule = await this.findRule(country, payoutMethod);
     if (rule) {
       return {
         fixedFee: Number(rule.fixedFee),
