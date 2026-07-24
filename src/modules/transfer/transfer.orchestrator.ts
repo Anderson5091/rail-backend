@@ -27,6 +27,7 @@ interface CreateTransferInput {
   skipWalletDebit?: boolean;
   country?: string;
   fee?: number;
+  payoutFee?: number;
   feeTransactionType?: string;
 }
 
@@ -54,23 +55,16 @@ export class TransferOrchestrator {
 
     if (!beneficiaryId) throw new Error("Beneficiary ID or inline beneficiary details are required");
 
-    const country = input.country || (input.beneficiary?.country) || "";
-    let fee: number;
-    if (input.fee !== undefined) {
-      fee = input.fee;
-    } else {
-      const feeConfigResult = await feeService.calculateByTransactionType(
-        input.feeTransactionType || "WEB_TRANSFER",
-        input.amount
-      );
-      if (feeConfigResult.totalFee > 0) {
-        fee = feeConfigResult.totalFee;
-      } else {
-        const legacyFee = await feeService.calculate(country, input.payoutMethod, input.amount);
-        fee = legacyFee.fee;
-      }
-    }
-    const destinationAmount = input.amount - fee;
+    const transferFeeConfig = await feeService.calculateByTransactionType(
+      input.feeTransactionType || "WEB_TRANSFER",
+      input.amount
+    );
+    const payoutFeeConfig = await feeService.calculateByTransactionType("PAYOUT", input.amount);
+
+    const totalFee = input.fee !== undefined ? input.fee : transferFeeConfig.totalFee + payoutFeeConfig.totalFee;
+    const payoutFee = input.payoutFee !== undefined ? input.payoutFee : payoutFeeConfig.processingFee;
+    const debitAmount = input.amount + totalFee;
+    const destinationAmount = input.amount;
 
     const currency = input.currency || "USD";
     const referenceId = input.referenceId || generateReferenceNumber();
@@ -80,7 +74,8 @@ export class TransferOrchestrator {
       userId: input.userId,
         beneficiaryId,
         amount: input.amount,
-        fee,
+        fee: totalFee,
+        payoutFee,
         destinationAmount,
         payoutMethod: input.payoutMethod,
         currency,
@@ -111,17 +106,17 @@ export class TransferOrchestrator {
 
       await lockService.withLock(`wallet:${wallet.id}`, async () => {
         const balance = await ledgerService.getBalance(wallet.id);
-        if (Number(balance) < input.amount) {
+        if (Number(balance) < debitAmount) {
           throw new Error("Insufficient balance");
         }
 
-        await ledgerService.debit(wallet.id, input.amount, transactionNumber);
+        await ledgerService.debit(wallet.id, debitAmount, transactionNumber);
 
         await prisma.walletTransaction.create({
           data: {
             walletId: wallet.id,
             type: "TRANSFER",
-            amount: input.amount,
+            amount: debitAmount,
             status: "PENDING",
             transactionNumber,
             payoutOrderId: payoutOrder.id,
@@ -137,7 +132,7 @@ export class TransferOrchestrator {
       entity: "Transfer",
       entityId: transfer.id,
       userId: input.userId as string | undefined,
-      metadata: { amount: input.amount, payoutMethod: input.payoutMethod, referenceId },
+      metadata: { amount: input.amount, totalFee, payoutMethod: input.payoutMethod, referenceId },
     });
 
     return { ...transfer, payoutOrderId: payoutOrder.id, referenceId };

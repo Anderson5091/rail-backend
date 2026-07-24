@@ -141,6 +141,8 @@ model Transfer {
   status              String       @default("DRAFT")
   fxRate              Decimal?     @db.Decimal(24, 8)
   fee                 Decimal?     @db.Decimal(24, 8)
+  payoutFee           Decimal?     @db.Decimal(24, 8)
+  crossBorderFee      Decimal?     @db.Decimal(24, 8)
   destinationAmount   Decimal?     @db.Decimal(24, 8)
   referenceId         String?      @unique
   payoutOrderId       String?

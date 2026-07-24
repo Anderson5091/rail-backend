@@ -278,7 +278,7 @@ router.post("/:id/toggle-status", authenticate, requireRole("SUPER_ADMIN"), asyn
 
 router.post("/:id/add-balance", authenticate, requireRole("AGENT_PARTNER", "AGENT_INTERNAL"), async (req: AuthRequest, res: Response) => {
   try {
-    const { userId, fiatAmount, usdtAmount, commissionPercent } = req.body;
+    const { userId, fiatAmount, usdtAmount } = req.body;
     if (!userId || !fiatAmount || !usdtAmount) {
       return res.status(400).json({ error: "userId, fiatAmount, and usdtAmount are required" });
     }
@@ -287,8 +287,7 @@ router.post("/:id/add-balance", authenticate, requireRole("AGENT_PARTNER", "AGEN
       String(req.params.id),
       userId,
       fiatAmount,
-      usdtAmount,
-      commissionPercent || 0
+      usdtAmount
     );
     res.json(result);
   } catch (err: unknown) {
@@ -299,7 +298,7 @@ router.post("/:id/add-balance", authenticate, requireRole("AGENT_PARTNER", "AGEN
 
 router.post("/:id/withdraw", authenticate, requireRole("AGENT_PARTNER", "AGENT_INTERNAL"), async (req: AuthRequest, res: Response) => {
   try {
-    const { userId, amount, commissionPercent, destinationType } = req.body;
+    const { userId, amount, destinationType } = req.body;
     if (!userId || !amount) {
       return res.status(400).json({ error: "userId and amount are required" });
     }
@@ -308,7 +307,6 @@ router.post("/:id/withdraw", authenticate, requireRole("AGENT_PARTNER", "AGENT_I
       String(req.params.id),
       userId,
       amount,
-      commissionPercent || 0,
       destinationType
     );
     res.json(result);
@@ -340,7 +338,7 @@ router.post("/topup-partner", authenticate, requireRole("SUPER_ADMIN", "ADMIN", 
 
 router.post("/:id/transfer", authenticate, requireRole("AGENT_PARTNER", "AGENT_INTERNAL"), async (req: AuthRequest, res: Response) => {
   try {
-    const { userId, amount, payoutMethod, beneficiaryId, beneficiary, commissionPercent, accountCurrency, debitUserWallet } = req.body;
+    const { userId, amount, payoutMethod, beneficiaryId, beneficiary, accountCurrency, debitUserWallet } = req.body;
     if (!amount || !payoutMethod) {
       return res.status(400).json({ error: "amount, and payoutMethod are required" });
     }
@@ -361,7 +359,6 @@ router.post("/:id/transfer", authenticate, requireRole("AGENT_PARTNER", "AGENT_I
       payoutMethod,
       beneficiaryId: beneficiaryId || undefined,
       beneficiary,
-      commissionPercent: Number(commissionPercent || 0),
       currency,
       debitUserWallet: !!debitUserWallet,
     });
@@ -376,7 +373,7 @@ router.post("/:id/transfer", authenticate, requireRole("AGENT_PARTNER", "AGENT_I
 
 router.post("/:id/process-payout", authenticate, requireRole("AGENT_PARTNER", "AGENT_INTERNAL"), async (req: AuthRequest, res: Response) => {
   try {
-    const { userId, amount, payoutMethod, beneficiaryId, commissionPercent, accountCurrency } = req.body;
+    const { userId, amount, payoutMethod, beneficiaryId, accountCurrency } = req.body;
     if (!userId || !amount || !payoutMethod) {
       return res.status(400).json({ error: "userId, amount, and payoutMethod are required" });
     }
@@ -391,10 +388,21 @@ router.post("/:id/process-payout", authenticate, requireRole("AGENT_PARTNER", "A
     const balance = await ledgerService.getBalance(wallet.id);
     if (balance < Number(amount)) return res.status(400).json({ error: "Insufficient user balance" });
 
-    const commission = (Number(amount) * Number(commissionPercent || 0)) / 100;
-    const { totalFee: systemFee } = await feeService.calculatePayoutFee(Number(amount));
     const grossAmount = Number(amount);
-    const netAmount = grossAmount - commission - systemFee;
+    const payoutFeeConfig = await feeService.calculatePayoutFee(grossAmount);
+    const commission = payoutFeeConfig.processingFee;
+    const systemFee = payoutFeeConfig.systemFee;
+
+    let benCountry: string | undefined;
+    if (beneficiaryId) {
+      const ben = await prisma.beneficiary.findUnique({ where: { id: beneficiaryId } });
+      benCountry = ben?.country;
+    }
+    const beneficiaryCountry = benCountry || "US";
+    const crossBorder = await feeService.calculateCrossBorderFee(beneficiaryCountry, payoutMethod, grossAmount);
+    const crossBorderFee = crossBorder.totalFee;
+    const totalDeductions = commission + systemFee + crossBorderFee;
+    const netAmount = grossAmount - totalDeductions;
 
     await ledgerService.debit(wallet.id, grossAmount, `agent_payout_${agentId}_${Date.now()}`);
 
@@ -402,17 +410,24 @@ router.post("/:id/process-payout", authenticate, requireRole("AGENT_PARTNER", "A
       await agentLedgerService.credit(agentId, commission, "COMMISSION", `payout_commission_${agentId}_${Date.now()}`, `Payout commission for user ${userId}`);
     }
 
-    let benCountry: string | undefined;
-    if (beneficiaryId) {
-      const ben = await prisma.beneficiary.findUnique({ where: { id: beneficiaryId } });
-      benCountry = ben?.country;
+    if (crossBorderFee > 0) {
+      const treasuryWallet = await prisma.treasuryWallet.findFirst({ where: { walletType: "HOT" } });
+      if (treasuryWallet) {
+        await prisma.treasuryWallet.update({
+          where: { id: treasuryWallet.id },
+          data: { balance: { increment: crossBorderFee } },
+        });
+      }
     }
-    const destCurrency = await fxService.resolveCurrency(benCountry || "US", payoutMethod, accountCurrency);
+
+    const destCurrency = await fxService.resolveCurrency(beneficiaryCountry, payoutMethod, accountCurrency);
     const transfer = await prisma.transfer.create({
       data: {
         userId,
         beneficiaryId: beneficiaryId || null,
         amount: netAmount,
+        payoutFee: commission,
+        crossBorderFee,
         payoutMethod,
         currency: destCurrency,
         status: "PENDING_PAYOUT",
@@ -454,7 +469,7 @@ router.post("/:id/process-payout", authenticate, requireRole("AGENT_PARTNER", "A
         userRef: userId,
         status: "COMPLETED",
         reference: generateReferenceNumber(),
-        metadata: { payoutMethod, beneficiaryId, systemFee },
+        metadata: { payoutMethod, beneficiaryId, systemFee, crossBorderFee },
       },
     });
 
@@ -628,23 +643,57 @@ router.post("/:id/execute-payout", authenticate, requireRole("AGENT_PARTNER", "A
       data: { status: "SENT_TO_PARTNER", processingAgentId: agentId },
     });
 
-    const reference = generateReferenceNumber();
+    const payoutFee = Number(transfer.payoutFee || 0);
     const amount = Number(transfer.amount);
+
+    let beneficiaryCountry = "US";
+    if (transfer.beneficiaryId) {
+      const ben = await prisma.beneficiary.findUnique({ where: { id: transfer.beneficiaryId } });
+      if (ben) beneficiaryCountry = ben.country;
+    }
+    const crossBorder = await feeService.calculateCrossBorderFee(
+      beneficiaryCountry,
+      transfer.payoutMethod || "BANK",
+      amount
+    );
+    const crossBorderFee = crossBorder.totalFee;
+    const netAmount = amount - crossBorderFee;
+
+    if (payoutFee > 0) {
+      await agentLedgerService.credit(agentId, payoutFee, "COMMISSION", `payout_commission_${agentId}_${Date.now()}`, `Payout commission for transfer ${transferId}`);
+    }
+
+    if (crossBorderFee > 0) {
+      const treasuryWallet = await prisma.treasuryWallet.findFirst({ where: { walletType: "HOT" } });
+      if (treasuryWallet) {
+        await prisma.treasuryWallet.update({
+          where: { id: treasuryWallet.id },
+          data: { balance: { increment: crossBorderFee } },
+        });
+      }
+    }
+
+    await prisma.transfer.update({
+      where: { id: transferId },
+      data: { crossBorderFee },
+    });
+
+    const reference = generateReferenceNumber();
     await prisma.agentTransaction.create({
       data: {
         agentId,
         type: "PAYOUT",
         amount,
-        commission: 0,
-        netAmount: amount,
+        commission: payoutFee,
+        netAmount,
         userRef: transfer.userId,
         status: "COMPLETED",
         reference,
-        metadata: { payoutMethod: transfer.payoutMethod, beneficiaryId: transfer.beneficiaryId, transferId },
+        metadata: { payoutMethod: transfer.payoutMethod, beneficiaryId: transfer.beneficiaryId, transferId, crossBorderFee },
       },
     });
 
-    await agentService.recordKpi(agentId, amount, 0);
+    await agentService.recordKpi(agentId, amount, payoutFee);
 
     res.json({ success: true, message: "Payout processing — deliver funds manually and upload proof", transferId });
   } catch (err: unknown) {

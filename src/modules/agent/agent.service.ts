@@ -60,7 +60,6 @@ export class AgentService {
     userId: string,
     fiatAmount: number,
     usdtAmount: number,
-    commissionPercent: number
   ) {
     const agent = await prisma.agent.findUnique({
       where: { id: agentId },
@@ -68,8 +67,9 @@ export class AgentService {
     });
     if (!agent) throw new Error("Agent not found");
 
-    const commission = (usdtAmount * commissionPercent) / 100;
-    const { totalFee: systemFee } = await feeService.calculateAgentDepositFee(usdtAmount);
+    const feeConfig = await feeService.calculateAgentDepositFee(usdtAmount);
+    const commission = feeConfig.processingFee;
+    const systemFee = feeConfig.systemFee;
     const netUsdt = usdtAmount - commission - systemFee;
 
     await liquidityEnforcer.ensureLiquidity(netUsdt);
@@ -112,7 +112,7 @@ export class AgentService {
         userRef: userId,
         status: "COMPLETED",
         reference: generateReferenceNumber(),
-        metadata: { fiatAmount, commissionPercent, systemFee },
+        metadata: { fiatAmount, systemFee, commission },
       },
     });
 
@@ -126,7 +126,6 @@ export class AgentService {
     agentId: string,
     userId: string,
     amount: number,
-    commissionPercent: number,
     destinationType?: "OFFCHAIN" | "MAIN"
   ) {
     const agent = await prisma.agent.findUnique({
@@ -135,8 +134,9 @@ export class AgentService {
     });
     if (!agent) throw new Error("Agent not found");
 
-    const commission = (amount * commissionPercent) / 100;
-    const { totalFee: systemFee } = await feeService.calculateAgentCashWithdrawFee(amount);
+    const feeConfig = await feeService.calculateAgentCashWithdrawFee(amount);
+    const commission = feeConfig.processingFee;
+    const systemFee = feeConfig.systemFee;
     const netAmount = amount - commission - systemFee;
 
     const userWallet = await prisma.wallet.findFirst({ where: { userId } });
@@ -186,7 +186,6 @@ export class AgentService {
         mobileProvider?: string;
         cashPickupLocation?: string;
       };
-      commissionPercent: number;
       currency?: string;
       debitUserWallet?: boolean;
     }
@@ -197,9 +196,12 @@ export class AgentService {
     });
     if (!agent) throw new Error("Agent not found");
 
-    const commission = (payload.amount * payload.commissionPercent) / 100;
-    const { totalFee: systemFee } = await feeService.calculateAgentTransferFee(payload.amount);
-    const netAmount = payload.amount - commission - systemFee;
+    const transferFeeConfig = await feeService.calculateAgentTransferFee(payload.amount);
+    const payoutFeeConfig = await feeService.calculateByTransactionType("PAYOUT", payload.amount);
+    const commission = transferFeeConfig.processingFee;
+    const systemFee = transferFeeConfig.systemFee;
+    const totalFee = systemFee + commission + payoutFeeConfig.totalFee;
+    const netAmount = payload.amount - totalFee;
 
     const shouldDebitAgent = !payload.debitUserWallet || !payload.userId;
 
@@ -237,7 +239,9 @@ export class AgentService {
       beneficiary: payload.beneficiary,
       currency: payload.currency,
       skipWalletDebit: shouldDebitAgent,
-      fee: systemFee,
+      fee: totalFee,
+      payoutFee: payoutFeeConfig.processingFee,
+      feeTransactionType: "AGENT_TRANSFER",
     });
 
     const agentTx = await prisma.agentTransaction.create({
@@ -258,6 +262,8 @@ export class AgentService {
           senderAgentEmail: agent.email,
           debitUserWallet: !shouldDebitAgent,
           systemFee,
+          payoutFee: payoutFeeConfig.totalFee,
+          totalFee,
         },
       },
     });

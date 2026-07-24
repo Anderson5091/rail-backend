@@ -23,10 +23,12 @@ router.post("/quote", async (req: AuthRequest, res: Response) => {
   const { amount, currency, country, method, accountCurrency } = req.body;
   const destCurrency = currency || await fxService.resolveCurrency(country, method, accountCurrency);
   const fxRate = await fxService.getRate(ENV.APP_CURRENCY_TOKEN, destCurrency);
-  const { totalFee } = await feeService.calculateTransferFee(amount);
-  const destinationAmount = (amount - totalFee) * fxRate;
+  const transferFee = await feeService.calculateByTransactionType("WEB_TRANSFER", amount);
+  const payoutFee = await feeService.calculateByTransactionType("PAYOUT", amount);
+  const totalFee = transferFee.totalFee + payoutFee.totalFee;
+  const destinationAmount = amount * fxRate;
 
-  res.json({ amount, fee: totalFee, fxRate, destinationAmount, currency: destCurrency });
+  res.json({ amount, fee: totalFee, payoutFee: payoutFee.processingFee, fxRate, destinationAmount, totalDebit: amount + totalFee, currency: destCurrency });
 });
 
 router.post("/", authenticate, idempotencyMiddleware, async (req: AuthRequest, res: Response) => {
@@ -73,6 +75,8 @@ router.get("/:id", authenticate, async (req: AuthRequest, res: Response) => {
     ...transfer,
     amount: Number(transfer.amount),
     fee: transfer.fee ? Number(transfer.fee) : null,
+    payoutFee: transfer.payoutFee ? Number(transfer.payoutFee) : null,
+    crossBorderFee: transfer.crossBorderFee ? Number(transfer.crossBorderFee) : null,
     fxRate: transfer.fxRate ? Number(transfer.fxRate) : null,
     destinationAmount: transfer.destinationAmount ? Number(transfer.destinationAmount) : null,
     beneficiary: beneficiary ? {

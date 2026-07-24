@@ -99,6 +99,20 @@ export class FeeService {
   async calculateAgentTopupFee(amount: number) {
     return this.calculateByTransactionType("AGENT_TOPUP", amount);
   }
+
+  async calculateCrossBorderFee(country: string, payoutMethod: string, amount: number) {
+    const rule = await prisma.feeRule.findFirst({
+      where: { country, payoutMethod },
+    });
+    if (rule) {
+      return {
+        fixedFee: Number(rule.fixedFee),
+        percentFee: Number(rule.percentFee),
+        totalFee: Number(rule.fixedFee) + amount * Number(rule.percentFee) / 100,
+      };
+    }
+    return { fixedFee: 0, percentFee: 0, totalFee: 0 };
+  }
 }
 
 export const feeService = new FeeService();
